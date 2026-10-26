@@ -1,0 +1,13 @@
+{
+  "name": "koudai-world",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Koudai World - single-file HTML5 mini-game with a zero-dependency Node.js multiplayer server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
