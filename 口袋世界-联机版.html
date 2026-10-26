@@ -1,0 +1,3527 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>口袋世界 · 联机版</title>
+<meta name="description" content="《口袋世界》是一个可离线运行的单文件网页小游戏：在网格地图上探索青禾镇、萤草坡与碎星林，在高草中随机遭遇野生灵兽，用回合制技能对战、投出灵球捕捉，收集图鉴、升级进化。角色、怪物与像素美术均为原创，支持键盘与手机触屏操作，自动存档。">
+<meta name="theme-color" content="#0d1117">
+<style>
+:root{
+  --ink:#0b0f14; --panel:#141b23; --panel2:#1b2530; --panel3:#22303d;
+  --line:#2b3744; --line2:#3a4b5c;
+  --text:#e9eff4; --dim:#93a4b3; --dim2:#6d7f8f;
+  --green:#5fd08a; --gold:#f2c14e; --orange:#f08a5d; --blue:#5aa9e6; --purple:#a78bfa; --red:#ef6b6b;
+  --flora:#6ec96e; --blaze:#f0864f; --tide:#5aa9e6; --stone:#b39a6f; --gale:#a78bfa;
+  --radius:14px;
+  --font:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:
+    radial-gradient(1100px 600px at 15% -10%, #1b2a33 0%, transparent 60%),
+    radial-gradient(900px 500px at 110% 110%, #221d2e 0%, transparent 55%),
+    var(--ink);
+  color:var(--text); font-family:var(--font); -webkit-text-size-adjust:100%;
+  min-height:100dvh; overflow:hidden;
+}
+button{font-family:inherit;color:inherit;cursor:pointer}
+.hidden{display:none !important}
+
+#app{
+  width:min(100vw - 20px, 1000px); height:100dvh; max-height:100dvh;
+  margin:0 auto; padding:10px 0 12px;
+  display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:8px;
+}
+
+/* ---------- HUD ---------- */
+#hud{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:7px 10px; background:linear-gradient(180deg,#18222c,#121a22);
+  border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:0 6px 18px rgba(0,0,0,.28);
+}
+.hud-left{display:flex; align-items:center; gap:10px; min-width:0; overflow:hidden}
+.coin{
+  display:flex; align-items:center; gap:6px; padding:5px 10px 5px 8px;
+  background:#0f1720; border:1px solid var(--line2); border-radius:999px;
+  font-family:var(--mono); font-size:13px; color:var(--gold); font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+.coin svg{display:block}
+.party-chips{display:flex; gap:5px; overflow:hidden}
+.chip{
+  display:flex; align-items:center; gap:4px; padding:3px 6px 3px 4px;
+  background:#0f1720; border:1px solid var(--line); border-radius:8px; min-width:0;
+}
+.chip canvas{width:18px;height:18px;image-rendering:pixelated;display:block}
+.chip .cn{font-size:11px;color:var(--dim);white-space:nowrap}
+.chip .cb{width:26px;height:4px;background:#243039;border-radius:2px;overflow:hidden}
+.chip .cb i{display:block;height:100%;background:var(--green);transition:width .3s}
+.chip.low .cb i{background:var(--orange)}
+.chip.dead{opacity:.45}
+.hud-right{display:flex; gap:6px; flex:0 0 auto}
+.hbtn{
+  padding:7px 11px; font-size:12.5px; letter-spacing:.4px;
+  background:#1d2833; border:1px solid var(--line2); border-radius:9px; color:#d5e2ec;
+  transition:transform .08s, background .15s, border-color .15s;
+}
+.hbtn:hover{background:#26333f; border-color:#4c6274}
+.hbtn:active{transform:translateY(1px)}
+
+/* ---------- stage ---------- */
+#stage{
+  position:relative; border-radius:16px; overflow:hidden;
+  border:1px solid var(--line2); background:#0e151b;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.03), 0 14px 34px rgba(0,0,0,.4);
+  min-height:0;
+}
+#mapCanvas{display:block; width:100%; height:100%; touch-action:none}
+#mapOverlay{position:absolute; inset:0; pointer-events:none}
+#placeChip{
+  position:absolute; left:12px; top:10px; padding:5px 11px; font-size:12px; letter-spacing:1px;
+  background:rgba(9,14,19,.72); border:1px solid rgba(120,150,175,.35); border-radius:999px;
+  color:#cfe0ec; backdrop-filter:blur(4px);
+}
+#hintChip{
+  position:absolute; left:12px; bottom:10px; font-size:11.5px; color:#8fa3b4;
+  background:rgba(9,14,19,.66); border-radius:8px; padding:4px 9px; border:1px solid rgba(120,150,175,.2);
+}
+.scan{position:absolute; inset:0; pointer-events:none; opacity:.16;
+  background:repeating-linear-gradient(180deg, rgba(255,255,255,.09) 0 1px, transparent 1px 3px);}
+.vig{position:absolute; inset:0; pointer-events:none;
+  box-shadow:inset 0 0 90px 20px rgba(0,0,0,.55);}
+#fadeLayer{position:absolute; inset:0; background:#070b0f; opacity:0; pointer-events:none; transition:opacity .22s ease}
+
+/* ---------- dialog ---------- */
+.dialog-box{
+  position:absolute; left:10px; right:10px; bottom:10px; padding:10px 12px 9px;
+  background:linear-gradient(180deg, rgba(20,28,37,.97), rgba(12,18,24,.97));
+  border:1px solid #4d6678; border-left:3px solid var(--green); border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.5); cursor:pointer; z-index:6;
+  animation:popIn .16s ease;
+}
+.dlg-name{font-size:11.5px; letter-spacing:1.4px; color:var(--green); margin-bottom:3px}
+.dlg-text{margin:0; font-size:14px; line-height:1.55; color:#e6eef5; min-height:1.5em}
+.dlg-next{position:absolute; right:10px; bottom:5px; font-size:10px; color:var(--dim2)}
+@keyframes popIn{from{opacity:0; transform:translateY(6px)}to{opacity:1; transform:none}}
+
+/* ---------- controls ---------- */
+#controls{
+  display:flex; align-items:center; gap:14px;
+  padding:6px 12px; border:1px solid var(--line); border-radius:var(--radius);
+  background:linear-gradient(180deg,#141d26,#101820);
+}
+.dpad{
+  display:grid; grid-template-columns:repeat(3,44px); grid-template-rows:repeat(3,38px);
+  gap:4px; flex:0 0 auto;
+}
+.dbtn{
+  display:flex; align-items:center; justify-content:center;
+  background:#1e2a35; border:1px solid var(--line2); border-radius:9px; padding:0;
+  transition:background .1s, transform .07s; touch-action:none; user-select:none;
+}
+.dbtn svg{width:15px; height:15px; fill:#8fb0c8}
+.dbtn:hover{background:#28353f}
+.dbtn.press{background:#2f4353; transform:scale(.96)}
+.dbtn.press svg{fill:#d6ecff}
+.dbtn.up{grid-area:1/2} .dbtn.left{grid-area:2/1} .dbtn.right{grid-area:2/3} .dbtn.down{grid-area:3/2}
+.dpad .core{grid-area:2/2; display:flex;align-items:center;justify-content:center;
+  font-size:9px; letter-spacing:1px; color:#5d7385; border:1px dashed #2c3a47; border-radius:9px}
+.aux{display:flex; flex-direction:column; gap:6px; flex:0 0 auto}
+.round-btn{
+  padding:10px 16px; border-radius:12px; font-size:13px; letter-spacing:1px;
+  background:linear-gradient(180deg,#2b6b48,#1f5138); border:1px solid #46845f; color:#ddf5e5;
+  box-shadow:0 3px 0 #143525;
+}
+.round-btn:active{transform:translateY(2px); box-shadow:0 1px 0 #143525}
+.round-btn.ghost{background:#1c2732; border-color:#3a4b5c; color:#b8cad8; box-shadow:0 3px 0 #0d151c}
+.tips{font-size:11.5px; color:var(--dim2); line-height:1.6; min-width:0}
+.tips b{color:#a9bfd0; font-weight:500}
+.tips .k{display:inline-block; padding:0 5px; border:1px solid #354555; border-radius:4px; font-family:var(--mono); font-size:10.5px; color:#a9bfd0}
+
+/* ---------- battle ---------- */
+#battleLayer{position:absolute; inset:0; z-index:5; overflow:hidden}
+.battle-sky{position:absolute; inset:0;
+  background:
+    radial-gradient(700px 260px at 70% 8%, rgba(140,200,255,.22), transparent 70%),
+    linear-gradient(180deg,#1b2f3f 0%, #16242f 46%, #1a2a25 62%, #14201c 100%);
+}
+.battle-sky:after{content:""; position:absolute; inset:0; opacity:.35;
+  background:repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 2px, transparent 2px 10px);}
+.battle-hills{position:absolute; left:0; right:0; bottom:34%; height:30%; pointer-events:none;
+  background:
+    radial-gradient(ellipse 42% 100% at 16% 100%, #20363a 0 72%, transparent 73%),
+    radial-gradient(ellipse 34% 108% at 52% 100%, #1a2c30 0 72%, transparent 73%),
+    radial-gradient(ellipse 46% 118% at 88% 100%, #1e3238 0 72%, transparent 73%);
+  opacity:.9;}
+.battle-ground{position:absolute; left:0; right:0; bottom:0; height:40%;
+  background:linear-gradient(180deg,#33492f 0%,#263a26 34%,#1b2a1e 72%,#131d18 100%);
+  box-shadow:inset 0 8px 18px rgba(0,0,0,.28);}
+.battle-ground:before{content:""; position:absolute; inset:0; opacity:.55;
+  background:radial-gradient(160px 30px at 46% 8%, rgba(190,230,170,.12), transparent 70%),
+             radial-gradient(120px 22px at 20% 46%, rgba(190,230,170,.08), transparent 70%),
+             radial-gradient(120px 22px at 74% 66%, rgba(190,230,170,.06), transparent 70%);
+  background-size:auto, auto, auto;}
+.battle-ground:after{content:""; position:absolute; left:0; right:0; top:0; height:1px;
+  background:linear-gradient(90deg, transparent, rgba(190,230,170,.25), transparent);}
+.battle-topbar{position:absolute; left:12px; top:10px; display:flex; gap:8px; align-items:center; z-index:3}
+.battle-topbar span{font-size:11px; letter-spacing:1px; padding:4px 9px; border-radius:999px;
+  background:rgba(8,13,17,.7); border:1px solid rgba(120,150,175,.3); color:#bcd2e2}
+#turnTag{color:#ffd98a; border-color:rgba(242,193,78,.35)}
+.slot{position:absolute; display:flex; z-index:3; gap:10px}
+.enemy-slot{right:4%; top:13%; flex-direction:column; align-items:flex-end; gap:2px}
+.player-slot{left:4%; bottom:24%; flex-direction:row; align-items:flex-end; gap:10px}
+.sprite-hold{position:relative; display:flex; align-items:flex-end; justify-content:center; padding-bottom:6px}
+.plat{position:absolute; left:50%; bottom:0; transform:translateX(-50%); width:112%; height:24px;
+  border-radius:50%; z-index:0;
+  background:radial-gradient(ellipse at 50% 26%, #4d7355 0 45%, #2b4030 72%, #1e2c22 100%);
+  box-shadow:0 8px 16px rgba(0,0,0,.4), inset 0 1px 0 rgba(220,240,220,.16);}
+.plat:after{content:""; position:absolute; left:12%; right:12%; top:30%; height:3px; border-radius:50%;
+  background:radial-gradient(ellipse at center, rgba(190,230,180,.22), transparent 70%);}
+.player-slot .plat{width:104%; height:18px}
+.sprite-wrap{position:relative; z-index:1; filter:drop-shadow(0 8px 10px rgba(0,0,0,.45))}
+#enemySprite,#playerSprite{width:clamp(80px,17vw,132px); height:auto; display:block; image-rendering:pixelated}
+#playerSprite{transform:scaleX(-1)}
+.info-card{
+  min-width:132px; padding:6px 9px; border-radius:9px; z-index:3;
+  background:rgba(10,16,21,.82); border:1px solid rgba(120,150,175,.34);
+  backdrop-filter:blur(3px);
+}
+.ic-row{display:flex; align-items:baseline; justify-content:space-between; gap:8px}
+.mon-name{font-size:13px; letter-spacing:.5px}
+.mon-lv{font-family:var(--mono); font-size:11px; color:var(--dim)}
+.type-tag{display:inline-block; margin:3px 0 5px; font-size:10px; padding:1px 6px; border-radius:999px;
+  border:1px solid currentColor; opacity:.95}
+.hpbar{height:6px; background:#1d2a33; border-radius:3px; overflow:hidden; border:1px solid #2c3d4a}
+.hpbar i{display:block; height:100%; width:100%; background:linear-gradient(90deg,#4ec97c,#7ee0a1);
+  transition:width .45s cubic-bezier(.4,.1,.2,1), background .3s}
+.hpbar.mid i{background:linear-gradient(90deg,#e8b64c,#f7d47a)}
+.hpbar.low i{background:linear-gradient(90deg,#e4614f,#f38a72)}
+.hp-num{display:flex; justify-content:space-between; gap:8px; margin-top:3px;
+  font-family:var(--mono); font-size:10.5px; color:var(--dim)}
+.exp-tag{color:#7fb0d4}
+.battle-log{
+  position:absolute; left:10px; right:10px; bottom:10px; min-height:74px; padding:9px 12px;
+  background:linear-gradient(180deg, rgba(16,23,30,.96), rgba(10,15,20,.96));
+  border:1px solid #47606f; border-left:3px solid var(--gold); border-radius:10px;
+  z-index:4; max-width:calc(100% - 20px);
+}
+.battle-log p{margin:0; font-size:13.5px; line-height:1.5; color:#e7eff6; min-height:1.2em}
+.battle-log p+p{color:#a9c3d6; font-size:12.5px; margin-top:2px}
+.battle-actions{
+  position:absolute; right:10px; bottom:92px; z-index:4; display:grid;
+  grid-template-columns:repeat(2,minmax(78px,1fr)); gap:6px;
+}
+.act{
+  padding:9px 10px; font-size:13px; border-radius:9px; letter-spacing:1px;
+  background:linear-gradient(180deg,#243442,#1a2731); border:1px solid #46606f; color:#dbeaf6;
+  transition:transform .07s, background .12s;
+}
+.act:hover{background:#2c3f4d}
+.act:active{transform:translateY(1px)}
+.act.primary{border-color:#4c8f6b; color:#d8f5e3; background:linear-gradient(180deg,#28543d,#1c3c2b)}
+.act:disabled{opacity:.4; cursor:default}
+.battle-sub{
+  position:absolute; left:10px; right:10px; bottom:92px; z-index:5; max-height:52%;
+  overflow:auto; padding:8px; border-radius:11px;
+  background:rgba(11,17,23,.95); border:1px solid #47606f; box-shadow:0 10px 26px rgba(0,0,0,.5);
+  display:grid; gap:6px;
+}
+.sub-row{
+  display:grid; grid-template-columns:1fr auto auto auto; gap:8px; align-items:center;
+  padding:7px 9px; border-radius:8px; background:#17222c; border:1px solid #2c3d4a; text-align:left;
+  font-size:12.5px;
+}
+.sub-row:hover{background:#20303c; border-color:#45606f}
+.sub-row:disabled{opacity:.42}
+.sub-row .mv-type{font-size:10px; padding:1px 6px; border-radius:999px; border:1px solid currentColor}
+.sub-row .mv-pp{font-family:var(--mono); font-size:11px; color:var(--dim)}
+.sub-head{display:flex; justify-content:space-between; align-items:center; padding:0 2px 2px;
+  font-size:11px; letter-spacing:1px; color:var(--dim)}
+.sub-close{padding:4px 9px; font-size:11px; background:#1c2732; border:1px solid #3a4b5c; border-radius:7px; color:#b8cad8}
+#captureLayer{position:absolute; inset:0; z-index:7; pointer-events:none}
+.ball{
+  position:absolute; width:22px; height:22px; border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, #fff, #d9e6ef 40%, #8fa4b3 70%);
+  border:2px solid #2c3a45; box-shadow:0 0 10px rgba(180,220,255,.6);
+  left:18%; bottom:34%; opacity:0;
+}
+.ball.throw{animation:throwArc .62s cubic-bezier(.3,-0.2,.6,1) forwards}
+.ball.shake{animation:shake .5s ease-in-out 3}
+.ball.caught{animation:caughtGlow .8s ease forwards}
+@keyframes throwArc{
+  0%{opacity:1; transform:translate(0,0) scale(.9) rotate(0)}
+  50%{transform:translate(30vw,-22vh) rotate(220deg) scale(1)}
+  100%{opacity:1; transform:translate(58vw,-8vh) rotate(440deg) scale(1)}
+}
+@keyframes shake{0%,100%{transform:translateX(0) rotate(0)}25%{transform:translateX(-5px) rotate(-9deg)}75%{transform:translateX(5px) rotate(9deg)}}
+@keyframes caughtGlow{to{filter:brightness(1.8) drop-shadow(0 0 14px #ffe9a8)}}
+#evoLayer{position:absolute; inset:0; z-index:8; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:8px;
+  background:radial-gradient(circle at 50% 45%, rgba(120,200,255,.18), rgba(4,7,10,.92) 65%)}
+#evoSprite{width:clamp(140px,30vw,220px); height:auto; image-rendering:pixelated;
+  filter:drop-shadow(0 0 22px rgba(150,220,255,.55))}
+#evoText{margin:0; font-size:13.5px; letter-spacing:2px; color:#cfe6f6}
+.evo-layer.flash #evoSprite{animation:evoFlash .5s steps(2,end) infinite}
+@keyframes evoFlash{0%{filter:brightness(3) saturate(0)}100%{filter:brightness(1) saturate(1.2) drop-shadow(0 0 26px rgba(160,230,255,.8))}}
+
+/* ---------- modal ---------- */
+.modal-root{
+  position:fixed; inset:0; z-index:40; display:flex; align-items:center; justify-content:center;
+  padding:16px; background:rgba(5,8,11,.72); backdrop-filter:blur(6px);
+  animation:popIn .16s ease;
+}
+.modal-card{
+  width:min(100%,560px); max-height:min(86dvh,720px); overflow:auto;
+  background:linear-gradient(180deg,#161f28,#101821);
+  border:1px solid #3a4f60; border-radius:16px; padding:16px 16px 14px;
+  box-shadow:0 24px 60px rgba(0,0,0,.6);
+}
+.modal-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px}
+.modal-title{font-size:16px; letter-spacing:1.5px}
+.modal-close{padding:5px 10px; font-size:12px; background:#1c2732; border:1px solid #3a4b5c; border-radius:8px; color:#b8cad8}
+.muted{color:var(--dim); font-size:12px; line-height:1.65}
+.panel-grid{display:grid; gap:8px}
+.mon-row{
+  display:grid; grid-template-columns:44px 1fr auto; gap:10px; align-items:center;
+  padding:8px; border-radius:10px; background:#121b23; border:1px solid #263440;
+}
+.mon-row.lead{border-color:#4c8f6b; background:#14241c}
+.mon-row.fainted{opacity:.6}
+.mon-row canvas{width:40px;height:40px;image-rendering:pixelated}
+.mon-row .mr-name{font-size:13px}
+.mon-row .mr-sub{font-size:11px; color:var(--dim); font-family:var(--mono)}
+.bar{height:5px; background:#1d2a33; border-radius:3px; overflow:hidden; margin-top:4px}
+.bar i{display:block;height:100%;background:var(--green);transition:width .3s}
+.bar.exp i{background:#5aa9e6}
+.small-btn{
+  padding:6px 10px; font-size:11.5px; border-radius:8px; background:#1e2a35;
+  border:1px solid var(--line2); color:#cfe0ec; white-space:nowrap;
+}
+.small-btn:hover{background:#28353f}
+.small-btn.primary{background:#1f5138; border-color:#46845f; color:#ddf5e5}
+.small-btn.danger{background:#4a2020; border-color:#7d3a3a; color:#f2c9c9}
+.move-list{display:grid; gap:4px; margin-top:6px; grid-column:1/-1}
+.move-pill{display:flex; justify-content:space-between; gap:8px; font-size:11px; color:#a9c3d6;
+  padding:3px 7px; border-radius:6px; background:#0f1720; border:1px solid #22303b}
+.dex-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:8px}
+.dex-cell{display:flex; flex-direction:column; align-items:center; gap:4px; padding:8px 4px 6px;
+  border-radius:10px; background:#121b23; border:1px solid #263440}
+.dex-cell canvas{width:52px;height:52px;image-rendering:pixelated}
+.dex-cell .dn{font-size:11.5px}
+.dex-cell .dx{font-size:10px; color:var(--dim2); font-family:var(--mono)}
+.dex-cell.unknown{opacity:.5}
+.dex-cell .caught{font-size:9.5px; color:var(--green); letter-spacing:1px}
+.type-chart{display:grid; gap:4px; margin-top:8px}
+.tc-row{display:grid; grid-template-columns:58px 1fr; gap:8px; align-items:center; font-size:11px}
+.tc-bar{height:16px; border-radius:5px; background:#0f1720; border:1px solid #22303b; position:relative; overflow:hidden}
+.tc-bar i{position:absolute; left:0; top:0; bottom:0; background:linear-gradient(90deg,#28543d,#3f7a58)}
+.chart-table{width:100%; border-collapse:collapse; font-size:11px; margin-top:8px}
+.chart-table th,.chart-table td{border:1px solid #263440; padding:3px 5px; text-align:center; color:#b8cad8}
+.chart-table th{background:#131c24; color:var(--dim); font-weight:500}
+.cell-super{color:#7ee0a1; background:rgba(95,208,138,.12)}
+.cell-weak{color:#f0a08c; background:rgba(240,140,110,.12)}
+.shop-grid{display:grid; gap:7px}
+.shop-row{display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:center;
+  padding:8px 10px; border-radius:9px; background:#121b23; border:1px solid #263440}
+.shop-row .sp-name{font-size:13px}
+.shop-row .sp-desc{font-size:11px; color:var(--dim); margin-top:2px}
+.shop-row .sp-price{font-family:var(--mono); font-size:12px; color:var(--gold)}
+.bag-item{display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:center;
+  padding:8px 10px; border-radius:9px; background:#121b23; border:1px solid #263440}
+.bag-item .bi-name{font-size:13px}
+.bag-item .bi-des{font-size:11px; color:var(--dim); margin-top:2px}
+.bag-item .bi-num{font-family:var(--mono); font-size:13px; color:#cfe0ec}
+.settings-list{display:grid; gap:8px}
+.set-row{display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:9px 10px; border-radius:9px; background:#121b23; border:1px solid #263440; font-size:13px}
+.set-row .muted{margin-top:2px}
+.starter-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px}
+.starter{
+  display:flex; flex-direction:column; align-items:center; gap:6px; padding:12px 6px 10px;
+  border-radius:12px; background:#121b23; border:1px solid #2b3a47; transition:transform .1s, border-color .15s, background .15s;
+}
+.starter:hover{transform:translateY(-2px); border-color:#5b7a8f; background:#16202a}
+.starter.sel{border-color:#5fd08a; background:#14241c; box-shadow:0 0 0 1px #3f7a58 inset}
+.starter canvas{width:64px;height:64px;image-rendering:pixelated}
+.starter .st-name{font-size:13px}
+.starter .st-desc{font-size:10.5px; color:var(--dim); text-align:center; line-height:1.45; min-height:3em}
+.tip-card{display:grid; gap:7px; margin:10px 0 4px}
+.tip-line{display:flex; gap:9px; font-size:12.5px; color:#cfdde8; line-height:1.5}
+.tip-line .tk{flex:0 0 auto; width:20px; height:20px; border-radius:6px; display:flex; align-items:center; justify-content:center;
+  background:#1d2a35; border:1px solid #35485a; font-family:var(--mono); font-size:10.5px; color:#9fc0d8}
+.title-big{font-size:26px; letter-spacing:6px; margin:2px 0 2px}
+.title-sub{font-size:11.5px; letter-spacing:2px; color:var(--dim); margin:0 0 10px}
+.divider{height:1px; background:linear-gradient(90deg,transparent,#2b3744 20%,#2b3744 80%,transparent); margin:12px 0}
+.note{font-size:10.5px; color:var(--dim2); line-height:1.6}
+.kbd{display:inline-block; padding:0 5px; border:1px solid #354555; border-radius:4px; font-family:var(--mono); font-size:10.5px; color:#a9bfd0}
+
+/* ---------- toasts ---------- */
+.toasts{position:fixed; left:50%; transform:translateX(-50%); top:14px; z-index:60; display:grid; gap:6px; pointer-events:none}
+.toast{
+  padding:7px 14px; border-radius:999px; font-size:12px; letter-spacing:.5px;
+  background:rgba(14,22,29,.94); border:1px solid #3f7a58; color:#d8f5e3;
+  box-shadow:0 8px 20px rgba(0,0,0,.45); animation:toastIn .2s ease, toastOut .3s ease 1.5s forwards;
+}
+.toast.warn{border-color:#8a6a3a; color:#f7e2b8}
+@keyframes toastIn{from{opacity:0; transform:translateY(-6px)}to{opacity:1; transform:none}}
+@keyframes toastOut{to{opacity:0; transform:translateY(-6px)}}
+
+/* ---------- shake / bump ---------- */
+.shake-hit{animation:shakeHit .32s ease}
+@keyframes shakeHit{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
+.flash-white{animation:flashWhite .34s ease}
+@keyframes flashWhite{0%{filter:brightness(3.4)}100%{filter:brightness(1)}}
+.sprite-wrap.hit{animation:shakeHit .32s ease}
+.sprite-wrap.faint{animation:faintOut .55s ease forwards}
+@keyframes faintOut{to{opacity:0; transform:translateY(26px) scale(.7)}}
+.bob{animation:bob 2.4s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+#playerSprite.bob{animation:bobBack 2.6s ease-in-out infinite}
+@keyframes bobBack{0%,100%{transform:scaleX(-1) translateY(0)}50%{transform:scaleX(-1) translateY(-4px)}}
+.encounter-flash{position:absolute; inset:0; background:#eaf6ff; opacity:0; z-index:9; pointer-events:none}
+.encounter-flash.on{animation:enc .55s ease-out}
+@keyframes enc{0%{opacity:0}18%{opacity:.92}40%{opacity:.1}60%{opacity:.8}100%{opacity:0}}
+
+@media (max-width:700px){
+  #app{width:calc(100vw - 12px); padding:6px 0 8px; gap:6px}
+  #hud{padding:6px 8px; gap:6px; flex-wrap:wrap}
+  .party-chips{display:none}
+  .hbtn{padding:7px 9px; font-size:12px}
+  .coin{font-size:12px; padding:4px 9px}
+  .dpad{grid-template-columns:repeat(3,46px); grid-template-rows:repeat(3,36px)}
+  .tips{display:none}
+  #hintChip{font-size:10.5px; left:8px; bottom:8px}
+  #placeChip{font-size:11px; left:8px; top:8px}
+  .battle-actions{bottom:82px; grid-template-columns:repeat(2,minmax(70px,1fr))}
+  .mon-name{font-size:12px}
+  .info-card{min-width:112px; padding:5px 7px}
+  .starter-grid{grid-template-columns:1fr; gap:6px}
+  .starter{flex-direction:row; align-items:center; text-align:left; padding:8px 10px}
+  .starter canvas{width:48px;height:48px}
+  .starter .st-desc{min-height:0; text-align:left; font-size:10px}
+  .title-big{font-size:22px; letter-spacing:4px}
+}
+@media (max-height:520px){
+  #controls .dpad{grid-template-columns:repeat(3,38px); grid-template-rows:repeat(3,30px)}
+  #hintChip{display:none}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="hud">
+    <div class="hud-left">
+      <div class="coin" title="金币">
+        <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.4" fill="#f2c14e" stroke="#8a6a1f" stroke-width="1.4"/><path d="M8 4.6v6.8M5.6 6.6h4.2a1.6 1.6 0 010 3.2H5.9" fill="none" stroke="#7a5c15" stroke-width="1.2" stroke-linecap="round"/></svg>
+        <span id="moneyVal">0</span>
+      </div>
+      <div class="party-chips" id="partyChips"></div>
+    </div>
+    <div class="hud-right">
+      <button class="hbtn" data-panel="party">队伍</button>
+      <button class="hbtn" data-panel="dex">图鉴</button>
+      <button class="hbtn" data-panel="bag">背包</button>
+      <button class="hbtn" data-panel="settings">设置</button>
+    </div>
+  </header>
+
+  <main id="stage">
+    <canvas id="mapCanvas"></canvas>
+    <div class="scan"></div>
+    <div class="vig"></div>
+    <div id="mapOverlay">
+      <div id="placeChip">青禾镇</div>
+      <div id="hintChip">方向键 / WASD 移动 · 空格 互动</div>
+    </div>
+
+    <div id="battleLayer" class="hidden">
+      <div class="battle-sky"></div>
+      <div class="battle-hills"></div>
+      <div class="battle-ground"></div>
+      <div class="battle-topbar"><span id="battlePlace">萤草坡</span><span id="turnTag">野生遭遇</span></div>
+      <div class="slot enemy-slot">
+        <div class="info-card">
+          <div class="ic-row"><span class="mon-name" id="enemyName">?</span><span class="mon-lv" id="enemyLv">Lv.2</span></div>
+          <div class="type-tag" id="enemyType">草叶</div>
+          <div class="hpbar" id="enemyHpBar"><i id="enemyHpFill"></i></div>
+        </div>
+        <div class="sprite-hold"><div class="plat"></div>
+          <div class="sprite-wrap bob" id="enemyWrap"><canvas id="enemySprite" width="128" height="128"></canvas></div>
+        </div>
+      </div>
+      <div class="slot player-slot">
+        <div class="sprite-hold"><div class="plat"></div>
+          <div class="sprite-wrap bob" id="playerWrap"><canvas id="playerSprite" width="128" height="128"></canvas></div>
+        </div>
+        <div class="info-card">
+          <div class="ic-row"><span class="mon-name" id="playerName">?</span><span class="mon-lv" id="playerLv">Lv.5</span></div>
+          <div class="hpbar" id="playerHpBar"><i id="playerHpFill"></i></div>
+          <div class="hp-num"><span id="playerHpText">20/20</span><span id="playerExpText">EXP 0%</span></div>
+        </div>
+      </div>
+      <div class="battle-log"><p id="logLine1">草丛里有什么东西动了一下。</p><p id="logLine2"></p></div>
+      <div class="battle-actions" id="battleActions">
+        <button class="act primary" data-act="fight">技能</button>
+        <button class="act" data-act="ball">灵球</button>
+        <button class="act" data-act="item">药水</button>
+        <button class="act" data-act="run">逃跑</button>
+      </div>
+      <div class="battle-sub hidden" id="battleSub"></div>
+      <div id="captureLayer" class="hidden"><div class="ball" id="ballEl"></div></div>
+      <div id="evoLayer" class="hidden"><canvas id="evoSprite" width="192" height="192"></canvas><p id="evoText">正在蜕变……</p></div>
+      <div class="encounter-flash" id="encFlash"></div>
+    </div>
+
+    <div id="dialogBox" class="dialog-box hidden">
+      <div class="dlg-name" id="dlgName"></div>
+      <p class="dlg-text" id="dlgText"></p>
+      <span class="dlg-next">空格 / 点击 继续</span>
+    </div>
+    <div id="fadeLayer"></div>
+  </main>
+
+  <footer id="controls">
+    <div class="dpad">
+      <button class="dbtn up" data-dir="up" aria-label="上"><svg viewBox="0 0 16 16"><path d="M8 3.4l6 7.2H2z"/></svg></button>
+      <button class="dbtn left" data-dir="left" aria-label="左"><svg viewBox="0 0 16 16"><path d="M3.4 8l7.2-6v12z"/></svg></button>
+      <div class="core">移动</div>
+      <button class="dbtn right" data-dir="right" aria-label="右"><svg viewBox="0 0 16 16"><path d="M12.6 8l-7.2 6V2z"/></svg></button>
+      <button class="dbtn down" data-dir="down" aria-label="下"><svg viewBox="0 0 16 16"><path d="M8 12.6l-6-7.2h12z"/></svg></button>
+    </div>
+    <div class="aux">
+      <button id="actBtn" class="round-btn">互动</button>
+      <button id="menuBtn" class="round-btn ghost">菜单</button>
+    </div>
+    <div class="tips">
+      <b>移动</b> 方向键 / WASD　<b>互动</b> 空格 / Enter　<b>菜单</b> Esc<br>
+      走进 <b>高草</b> 会遭遇野生灵兽；把它的血量压低再投 <b>灵球</b> 会更容易抓到。进度自动保存在本机。
+    </div>
+  </footer>
+</div>
+
+<div class="modal-root hidden" id="modalRoot"><div class="modal-card" id="modalCard"></div></div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+"use strict";
+(function(){
+/* =========================================================
+   口袋世界 · 静态数据
+   玩法参考经典怪物捕捉 RPG，角色、怪物、地名与美术均为原创
+   ========================================================= */
+
+var TYPES = {
+  flora:{id:'flora', name:'草叶', color:'#6ec96e'},
+  blaze:{id:'blaze', name:'焰心', color:'#f0864f'},
+  tide :{id:'tide',  name:'潮汐', color:'#5aa9e6'},
+  stone:{id:'stone', name:'岩垒', color:'#c0a878'},
+  gale :{id:'gale',  name:'疾风', color:'#a78bfa'}
+};
+var TYPE_ORDER = ['flora','blaze','tide','stone','gale'];
+
+/* 克制表：攻方 -> 守方倍率。1.6 克制 / 0.6 被抗 / 未列出为 1.0 */
+var CHART = {
+  flora:{tide:1.6, stone:1.6, blaze:0.6, gale:0.6},
+  blaze:{flora:1.6, gale:1.6, tide:0.6, stone:0.6},
+  tide :{blaze:1.6, stone:1.6, flora:0.6, gale:0.6},
+  stone:{blaze:1.6, gale:1.6, flora:0.6, tide:0.6},
+  gale :{flora:1.6, tide:1.6, stone:0.6, blaze:0.6}
+};
+function typeMult(atkType, defType){
+  if(!atkType || !defType) return 1;
+  var row = CHART[atkType];
+  if(!row) return 1;
+  var v = row[defType];
+  return (v === undefined) ? 1 : v;
+}
+
+/* 技能：type 为 null 表示无属性（不享受同属性加成，也不被克制） */
+var MOVES = {
+  tengman :{id:'tengman',  name:'藤蔓缠',  type:'flora', power:35, acc:1.00, pp:30},
+  yeren   :{id:'yeren',    name:'叶刃',    type:'flora', power:45, acc:0.95, pp:25},
+  huami   :{id:'huami',    name:'花蜜吐息',type:'flora', power:50, acc:0.92, pp:18},
+  luoye   :{id:'luoye',    name:'落叶乱舞',type:'flora', power:62, acc:0.85, pp:10},
+  meihui  :{id:'meihui',   name:'煤灰扑',  type:'blaze', power:32, acc:1.00, pp:30},
+  huohua  :{id:'huohua',   name:'火花',    type:'blaze', power:42, acc:0.98, pp:25},
+  tangzhao:{id:'tangzhao', name:'烫焰爪',  type:'blaze', power:52, acc:0.92, pp:16},
+  chifeng :{id:'chifeng',  name:'炽风',    type:'blaze', power:64, acc:0.85, pp:10},
+  paomoyao:{id:'paomoyao', name:'泡沫咬',  type:'tide',  power:36, acc:1.00, pp:30},
+  shuibao :{id:'shuibao',  name:'水泡弹',  type:'tide',  power:44, acc:0.98, pp:25},
+  chaoyong:{id:'chaoyong', name:'潮涌',    type:'tide',  power:55, acc:0.92, pp:15},
+  wolun   :{id:'wolun',    name:'涡流冲',  type:'tide',  power:66, acc:0.85, pp:8},
+  yanci   :{id:'yanci',    name:'岩刺',    type:'stone', power:38, acc:1.00, pp:30},
+  suishi  :{id:'suishi',   name:'碎石击',  type:'stone', power:46, acc:0.95, pp:25},
+  yingke  :{id:'yingke',   name:'硬壳顶',  type:'stone', power:52, acc:0.95, pp:16},
+  gunshi  :{id:'gunshi',   name:'滚石压',  type:'stone', power:64, acc:0.85, pp:10},
+  jiyu    :{id:'jiyu',     name:'疾羽',    type:'gale',  power:34, acc:1.00, pp:30},
+  fengren :{id:'fengren',  name:'风刃',    type:'gale',  power:42, acc:0.95, pp:25},
+  kongqi  :{id:'kongqi',   name:'空音波',  type:'gale',  power:50, acc:0.95, pp:16},
+  xuanfeng:{id:'xuanfeng', name:'旋风卷',  type:'gale',  power:60, acc:0.88, pp:12},
+  pinyin  :{id:'pinyin',   name:'拼命撞',  type:'none',  power:32, acc:1.00, pp:0}
+};
+
+/* 灵兽图鉴：学习表 {lv, move}；evolve 为进化目标 */
+var SPECIES = {
+  taichou:{
+    dex:1, name:'苔球兽', type:'flora', base:{hp:46,atk:50,def:48,spd:46},
+    sprite:'taichou', pal:'taichou', catch:150, exp:12, evolve:{to:'taiguan', lv:9},
+    learn:[{lv:1,m:'tengman'},{lv:1,m:'yeren'},{lv:2,m:'huami'},{lv:5,m:'luoye'}],
+    desc:'背上盖着一层软苔，走路时苔渣会簌簌往下掉。'
+  },
+  taiguan:{
+    dex:2, name:'苔冠兽', type:'flora', base:{hp:62,atk:68,def:70,spd:58},
+    sprite:'taichou', pal:'taiguan', extra:'crown', catch:55, exp:26,
+    learn:[{lv:1,m:'yeren'},{lv:1,m:'tengman'},{lv:12,m:'huami'},{lv:15,m:'luoye'}],
+    desc:'苔层厚得能存水，头顶长出像王冠的硬苔。'
+  },
+  yanwei:{
+    dex:3, name:'焰尾貂', type:'blaze', base:{hp:44,atk:54,def:42,spd:56},
+    sprite:'yanwei', pal:'yanwei', catch:150, exp:12, evolve:{to:'yanzong', lv:9},
+    learn:[{lv:1,m:'huohua'},{lv:1,m:'meihui'},{lv:2,m:'tangzhao'},{lv:5,m:'chifeng'}],
+    desc:'细长的尾巴末端一直燃着小火苗，睡觉时会把尾巴盘起来。'
+  },
+  yanzong:{
+    dex:4, name:'焰鬃貂', type:'blaze', base:{hp:60,atk:74,def:58,spd:72},
+    sprite:'yanwei', pal:'yanzong', extra:'crest', catch:55, exp:26,
+    learn:[{lv:1,m:'tangzhao'},{lv:1,m:'huohua'},{lv:12,m:'chifeng'},{lv:16,m:'meihui'}],
+    desc:'颈后的火鬃烧得比尾巴旺，奔跑时留下一串余烬。'
+  },
+  dilu:{
+    dex:5, name:'滴露蛙', type:'tide', base:{hp:48,atk:48,def:50,spd:44},
+    sprite:'dilu', pal:'dilu', catch:150, exp:12, evolve:{to:'yongquan', lv:9},
+    learn:[{lv:1,m:'shuibao'},{lv:1,m:'paomoyao'},{lv:2,m:'chaoyong'},{lv:5,m:'wolun'}],
+    desc:'皮肤一直湿漉漉的，叶尖的露水是它最爱的小零食。'
+  },
+  yongquan:{
+    dex:6, name:'涌泉蛙', type:'tide', base:{hp:66,atk:66,def:70,spd:56},
+    sprite:'dilu', pal:'yongquan', extra:'aura', catch:55, exp:26,
+    learn:[{lv:1,m:'chaoyong'},{lv:1,m:'shuibao'},{lv:12,m:'wolun'},{lv:16,m:'paomoyao'}],
+    desc:'鼓起的喉囊能蓄住一整池水，喷出来时带着细小虹光。'
+  },
+  yati:{
+    dex:7, name:'芽蹄鹿', type:'flora', base:{hp:52,atk:52,def:48,spd:52},
+    sprite:'yati', pal:'yati', catch:110, exp:16,
+    learn:[{lv:1,m:'yeren'},{lv:1,m:'tengman'},{lv:3,m:'huami'},{lv:9,m:'luoye'}],
+    desc:'角上抽着嫩芽，被惊到时会顺着风跑出很远。'
+  },
+  tanjiao:{
+    dex:8, name:'炭角羊', type:'blaze', base:{hp:56,atk:58,def:54,spd:40},
+    sprite:'tanjiao', pal:'tanjiao', catch:100, exp:18,
+    learn:[{lv:1,m:'huohua'},{lv:1,m:'meihui'},{lv:3,m:'tangzhao'},{lv:9,m:'chifeng'}],
+    desc:'角里像塞了慢慢烧着的炭，冬天靠在一起很暖。'
+  },
+  langwen:{
+    dex:9, name:'浪纹鲵', type:'tide', base:{hp:54,atk:50,def:52,spd:56},
+    sprite:'langwen', pal:'langwen', catch:105, exp:17,
+    learn:[{lv:1,m:'shuibao'},{lv:1,m:'paomoyao'},{lv:3,m:'chaoyong'},{lv:9,m:'wolun'}],
+    desc:'背上的纹路随着水波一变一变，浅水里几乎看不出来。'
+  },
+  lijia:{
+    dex:10, name:'砾甲虫', type:'stone', base:{hp:50,atk:56,def:66,spd:34},
+    sprite:'lijia', pal:'lijia', catch:115, exp:16,
+    learn:[{lv:1,m:'yanci'},{lv:1,m:'suishi'},{lv:3,m:'yingke'},{lv:9,m:'gunshi'}],
+    desc:'壳上嵌着七颗小石子，那是它自己一颗颗搬来的。'
+  },
+  chenwei:{
+    dex:11, name:'尘尾鼬', type:'stone', base:{hp:58,atk:64,def:56,spd:62},
+    sprite:'chenwei', pal:'chenwei', catch:85, exp:24,
+    learn:[{lv:1,m:'suishi'},{lv:1,m:'yanci'},{lv:4,m:'yingke'},{lv:10,m:'gunshi'}],
+    desc:'尾巴扫过地面会扬起细尘，它靠这层尘幕在碎石坡上溜走。'
+  },
+  jifei:{
+    dex:12, name:'疾羽雀', type:'gale', base:{hp:46,atk:54,def:44,spd:64},
+    sprite:'jifei', pal:'jifei', catch:120, exp:15,
+    learn:[{lv:1,m:'jiyu'},{lv:1,m:'fengren'},{lv:3,m:'kongqi'},{lv:9,m:'xuanfeng'}],
+    desc:'翅膀不大，却是草坡上飞得最快的小家伙。'
+  },
+  rongxiao:{
+    dex:13, name:'绒尾枭', type:'gale', base:{hp:60,atk:60,def:56,spd:58},
+    sprite:'rongxiao', pal:'rongxiao', catch:80, exp:25,
+    learn:[{lv:1,m:'fengren'},{lv:1,m:'jiyu'},{lv:4,m:'kongqi'},{lv:10,m:'xuanfeng'}],
+    desc:'夜里站在树枝上，翅膀扇出的风会把落叶卷成一小团。'
+  }
+};
+var DEX_ORDER = ['taichou','taiguan','yanwei','yanzong','dilu','yongquan','yati','tanjiao','langwen','lijia','chenwei','jifei','rongxiao'];
+var STARTERS = ['taichou','yanwei','dilu'];
+
+var ITEMS = {
+  lingqiu  :{id:'lingqiu',   name:'灵球',     price:60,  ball:1.0, desc:'基础捕获装置。血量越低越容易收住。'},
+  yinlingqiu:{id:'yinlingqiu',name:'银灵球',  price:170, ball:1.55, desc:'内壁镀银，命中后更难被挣脱。'},
+  yaoshui  :{id:'yaoshui',   name:'疗愈药水', price:40,  heal:30,  desc:'回复一只灵兽 30 点体力。'},
+  nongyao  :{id:'nongyao',   name:'浓缩药水', price:110, heal:75,  desc:'回复一只灵兽 75 点体力。'}
+};
+var SHOP_STOCK = ['lingqiu','yinlingqiu','yaoshui','nongyao'];
+
+/* 地图：'T'树 'W'水 'H'房墙 'D'门 'x'栅栏 'R'石堆 ','草 '.'土路 'F'花 'G'高草 'S'木牌 'C'柜台 'A'疗愈泉 '='出口 */
+var MAP_DEFS = {
+  town:{
+    name:'青禾镇', music:'town', dark:false,
+    rows:[
+      'TTTTTTTTTTTTTTTTTTTTTT',
+      'T,,,,,,,,,,,,,,,,,,,,T',
+      'T,,HHHHH,,,,,HHHHH,,,T',
+      'T,,HHHHH,,,,,HHHHH,,,T',
+      'T,,HDDDH,,,,,HDDDH,,,T',
+      'T,,,,,,,,..,,,,,,,,,,T',
+      'T,,S,,,,,..,,,,,,,,,,T',
+      'T,,,,,,,,..,,,,,,,,,,T',
+      'T,,,C,,,,..,,,A,,,,,,T',
+      'T,,,,,,,,..,,,,,,,,,,T',
+      'T,,GGGG,,,..,,,GGGG,,T',
+      'T,,GGGG,,,..,,,GGGG,,T',
+      'T,,,,,,,,..,,,,,,,,,,T',
+      'T,,,,,,,,..,,,,,,,,,,T',
+      'TTTTTTTTTT===TTTTTTTTT',
+      'TTTTTTTTTTTTTTTTTTTTTT'
+    ],
+    exits:{
+      '10,14':{to:'meadow', x:11, y:1, dir:'down'},
+      '11,14':{to:'meadow', x:12, y:1, dir:'down'},
+      '12,14':{to:'meadow', x:13, y:1, dir:'down'}
+    },
+    spawn:{x:10, y:8, dir:'down'},
+    encounter:{rate:0.10, table:[
+      {sp:'yati',  w:3, lv:[2,4]},
+      {sp:'jifei', w:3, lv:[2,4]},
+      {sp:'lijia', w:2, lv:[2,5]}
+    ]},
+    npcs:[
+      {id:'prof',  name:'芽伯',  x:7,  y:7,  dir:'down', sprite:'elder'},
+      {id:'deer',  name:'阿鹿',  x:4,  y:7,  dir:'down', sprite:'merchant'},
+      {id:'spring',name:'泉守',  x:17, y:9,  dir:'up',   sprite:'keeper'},
+      {id:'kid',   name:'小满',  x:13, y:12, dir:'left', sprite:'kid', wander:true}
+    ]
+  },
+  meadow:{
+    name:'萤草坡', music:'field', dark:false,
+    rows:[
+      'TTTTTTTTTTT===TTTTTTTTTT',
+      'T,,,,,,,,,,,,,,,,,,,,,,T',
+      'T,,GGGG,,,,,GGGG,,,,,,,T',
+      'T,,GGGG,,,,,GGGG,,,,,,,T',
+      'T,,,,,,,,,..,,,,,,,,,,,T',
+      'T,,,,,,,TT,..,,,,,,,,,,T',
+      'T,GGG,,,,,,..,,,,GGG,,,T',
+      'T,GGG,,,,WWWW,,,GGG,,,,T',
+      'T,GGG,,,WWWWWW,,GGG,,,,=',
+      'T,,,,,,,WWWWWW,,,,,,,,,=',
+      'T,,,,,,,,WWWW,,,,,,,,,,T',
+      'T,,GGGGG,,,,,,,,GGGGG,,T',
+      'T,,GGGGG,,,,,,,,GGGGG,,T',
+      'T,,,,,,,,,,,,,,,,,,,,,,T',
+      'T,,,,TT,,,,,,TT,,,,,,,,T',
+      'T,,,,,,,,,..,,,,,,,,,,,T',
+      'T,,,,,,,,,..,,,,,,,,,,,T',
+      'TTTTTTTTTTTTTTTTTTTTTTTT'
+    ],
+    exits:{
+      '11,0':{to:'town', x:10, y:13, dir:'up'},
+      '12,0':{to:'town', x:11, y:13, dir:'up'},
+      '13,0':{to:'town', x:12, y:13, dir:'up'},
+      '23,8':{to:'grove', x:1, y:8, dir:'right'},
+      '23,9':{to:'grove', x:1, y:9, dir:'right'}
+    },
+    spawn:{x:12, y:2, dir:'down'},
+    encounter:{rate:0.13, table:[
+      {sp:'yati',   w:3, lv:[2,5]},
+      {sp:'jifei',  w:3, lv:[2,5]},
+      {sp:'tanjiao',w:3, lv:[3,6]},
+      {sp:'langwen',w:3, lv:[3,6]},
+      {sp:'lijia',  w:2, lv:[3,6]}
+    ]},
+    npcs:[
+      {id:'sign2', name:'木牌', x:14, y:2, dir:'down', sprite:'sign'}
+    ]
+  },
+  grove:{
+    name:'碎星林', music:'grove', dark:true,
+    rows:[
+      'TTTTTTTTTTTTTTTTTTTTTTTT',
+      'T,,,,,,,,,,,,,,,,,,,,,,T',
+      'T,TTTT,,,GGGGG,,,,TTTT,T',
+      'T,TTTT,,,GGGGG,,,,TTTT,T',
+      'T,,,,,,,,GGGGG,,,,,,,,,T',
+      'T,,,,WWWW,,,,,,,,,,,WWW,',
+      'T,,,,WWWW,,,TTTT,,,,WWW,',
+      'T,,,,,,,,,,,TTTT,,,,,,,,',
+      '=,,,,,,,,,,,,,,,,,,,,,,,',
+      '=,,,,,,,,,,,,,,,,,,,,TTT,',
+      'T,,,,GGGGG,,,,,GGGGG,,,T',
+      'T,,,,GGGGG,,,,,GGGGG,,,T',
+      'T,,,TTTTTT,,,,,TTTTT,,,T',
+      'T,,,,,,,,,,,GGGG,,,,,,,T',
+      'T,,,,,,,,,,,GGGG,,,,,,,T',
+      'T,,,,,,,,,,,,,,,,,,,,,,T',
+      'T,,,,,,,,,,,,,,,,,,,,,,T',
+      'TTTTTTTTTTTTTTTTTTTTTTTT'
+    ],
+    exits:{
+      '0,8':{to:'meadow', x:22, y:8, dir:'left'},
+      '0,9':{to:'meadow', x:22, y:9, dir:'left'}
+    },
+    spawn:{x:2, y:8, dir:'right'},
+    encounter:{rate:0.14, table:[
+      {sp:'chenwei', w:3, lv:[7,11]},
+      {sp:'rongxiao',w:3, lv:[8,12]},
+      {sp:'langwen', w:2, lv:[6,9]},
+      {sp:'tanjiao', w:2, lv:[6,9]},
+      {sp:'taiguan', w:1, lv:[11,12]}
+    ]},
+    npcs:[
+      {id:'explorer', name:'勘探者', x:6, y:13, dir:'right', sprite:'explorer'}
+    ]
+  }
+};
+/* =========================================================
+   像素美术：调色板 / 灵兽图形 / 地块 / 角色
+   全部为程序员绘制，无外部图片
+   ========================================================= */
+
+var PALS = {
+  taichou:{o:'#1b2a1c', a:'#7cc86a', b:'#4c8f49', c:'#b6e39a', d:'#a8d96b', w:'#f4fff4', k:'#12251a', m:'#2b4a2f'},
+  taiguan:{o:'#16231a', a:'#5fae5b', b:'#3a7040', c:'#9ad88d', d:'#e2cf7a', w:'#f4fff4', k:'#0e1c13', m:'#24402a'},
+  yanwei :{o:'#3a1c14', a:'#e8734a', b:'#b04c2e', c:'#ffb07a', d:'#ffd166', w:'#fff6ee', k:'#2a120c', m:'#6a2a1c'},
+  yanzong:{o:'#3d1a10', a:'#f0924f', b:'#c2552a', c:'#ffd08a', d:'#ffe08a', w:'#fff8ee', k:'#2a120c', m:'#6a2a1c'},
+  dilu   :{o:'#173a38', a:'#6ecfc4', b:'#3d9a92', c:'#b8f0e8', d:'#ffe9a8', w:'#f6fffe', k:'#0f2a28', m:'#255c57'},
+  yongquan:{o:'#132c3f', a:'#4fb3dd', b:'#2b7fa8', c:'#a8ddf5', d:'#ffffff', w:'#f6fdff', k:'#0d2334', m:'#1e5a77'},
+  yati   :{o:'#3a2a1a', a:'#cfaa74', b:'#9a7448', c:'#ecd6b0', d:'#7cc86a', w:'#fffaf0', k:'#241a10', m:'#6b4a2c'},
+  tanjiao:{o:'#25252c', a:'#7d7d8c', b:'#575765', c:'#b0b0c0', d:'#ff8a4c', w:'#fdfdff', k:'#16161c', m:'#3c3c48'},
+  langwen:{o:'#12304a', a:'#5a9fd4', b:'#3a6f9a', c:'#a8d8f2', d:'#d9f2ff', w:'#f4fbff', k:'#0d2233', m:'#235a7d'},
+  lijia  :{o:'#2a2318', a:'#a89a7d', b:'#7a6d54', c:'#d6c9ab', d:'#ffd166', w:'#fffaef', k:'#1d1810', m:'#4a4030'},
+  chenwei:{o:'#2e2418', a:'#b09578', b:'#7d6650', c:'#dcc4a2', d:'#f0e0c0', w:'#fffaf0', k:'#1f1912', m:'#54402c'},
+  jifei  :{o:'#1e2340', a:'#8f9bd0', b:'#5f6aa0', c:'#c4cdf0', d:'#ffd166', w:'#f6f7ff', k:'#141830', m:'#3a4270'},
+  rongxiao:{o:'#201a33', a:'#7a6ba8', b:'#52467a', c:'#b0a2d8', d:'#ffcf6b', w:'#fff8e8', k:'#151024', m:'#3d3159'}
+};
+
+/* 16x16 图形：'.'透明 'o'描边 'a'主色 'b'暗部 'c'亮部 'd'特色色 'w'眼白 'k'瞳孔 'm'嘴 */
+var SPRITES = {
+  taichou:[
+    '................',
+    '.....oooooo.....',
+    '....oddddddo....',
+    '...oddddddddo...',
+    '...oaaaaaaaaao..',
+    '..oaaacccaaaaao.',
+    '..oawkaaaawkaao.',
+    '..oawkaaaawkaao.',
+    '..oaaaaaaaaaaao.',
+    '..oaaabmmmbaaao.',
+    '..oaaaaaaaaaaao.',
+    '...ooaaaaaaoo...',
+    '....oaa..aao....',
+    '....obboobbo....',
+    '....obboobbo....',
+    '.....oo..oo.....'
+  ],
+  yanwei:[
+    '................',
+    '..oo........oo..',
+    '.odao......odao.',
+    '.oaadooooooodao.',
+    '.oaaaaaaaaaaaao.',
+    '.oawkaaaaawkaao.',
+    '.oaaaaaaaaaaaao.',
+    '.oaaaabmmbaaaao.',
+    '..oaaaaaaaaaaao.',
+    '..obaaaaaaaaabo.',
+    '...oaaa..aaaao..',
+    '...oaa....aao...',
+    '..oobo....obbo..',
+    '..oo........oo..',
+    '................',
+    '................'
+  ],
+  dilu:[
+    '................',
+    '................',
+    '....oo....oo....',
+    '...oaao..oaao...',
+    '...owko..owko...',
+    '...oaaoooooao...',
+    '..oaaaaaaaaaao..',
+    '..oaabbbbbbaao..',
+    '.oaaaaaaaaaaaao.',
+    '.oaaaaaaaaaaaao.',
+    '.obaaammmmaaabo.',
+    '.obbaaaaaaaabbo.',
+    '..oobaaaaaaboo..',
+    '....oooooooo....',
+    '...oao....oao...',
+    '...oo......oo...'
+  ],
+  yati:[
+    '..d..dd..d......',
+    '..od.od.od......',
+    '...oddaaddo.....',
+    '....oaaaao......',
+    '...oawkaao......',
+    '....oaaamo......',
+    '.....oaao.......',
+    '....oaaaao......',
+    '...oaaaaaaao....',
+    '..oaaaaaaaaao...',
+    '..oaaaaaaaaao...',
+    '..obaaaaaaaabo..',
+    '...obaaaaaabo...',
+    '...oao...oao....',
+    '...obo...obo....',
+    '..oo.......oo...'
+  ],
+  tanjiao:[
+    '..d........d....',
+    '..od......do....',
+    '...odo..odo.....',
+    '..ooooooooooo...',
+    '..occcccccccco..',
+    '.occcccccccccco.',
+    '.oawkaaaaawkaao.',
+    '.oaaaabmmbaaaao.',
+    '.oaaaaaaaaaaaao.',
+    '.obaaaaaaaaaabo.',
+    '.obbaaaaaaaabbo.',
+    '..obbaaaaaabbo..',
+    '...obaaaaaabo...',
+    '...oao....oao...',
+    '...obo....obo...',
+    '....oo....oo....'
+  ],
+  langwen:[
+    '................',
+    '................',
+    '................',
+    '..oooooooooooo..',
+    '.oaaaaaaaaaaaao.',
+    '.oawkaaaawkaaao.',
+    '.oaaaaaaaaaaaao.',
+    '.obaaabmmbaaaao.',
+    '.oaaaaaaaaaaaao.',
+    '.obbaaaaaaaaabo.',
+    '..obbaaaaaaabo..',
+    '...obbaaaaabo...',
+    '....obaaaaao....',
+    '.....obbabo.....',
+    '......oooo......',
+    '................'
+  ],
+  lijia:[
+    '................',
+    '.....oooooo.....',
+    '...oocccccccoo..',
+    '..occcdddddccco.',
+    '..ocdddcccddddo.',
+    '.occcccccccccco.',
+    '.oaccccccccccao.',
+    '.oaawkaaaawkaao.',
+    '.oaaaaaaaaaaaao.',
+    '.obaaaaaaaaaabo.',
+    '..obaaaaaaaabo..',
+    '..oobaaaaaaboo..',
+    '...oao....oao...',
+    '...oao....oao...',
+    '...obo....obo...',
+    '....oo....oo....'
+  ],
+  chenwei:[
+    '................',
+    '................',
+    '...oo...........',
+    '..oddo..........',
+    '..odddooooo.....',
+    '...oddaaaaao....',
+    '....oawkaaaao...',
+    '....oaaaaaaao...',
+    '...oaaaaaaaaao..',
+    '..oaaaaaaaaaaao.',
+    '..obaaaaaaaaaao.',
+    '..obbaaaaaaaabo.',
+    '...obbaaaaaabo..',
+    '....obo..obo....',
+    '....oo....oo....',
+    '................'
+  ],
+  jifei:[
+    '................',
+    '................',
+    '.......oo.......',
+    '......oaaao.....',
+    '.....oawkao.....',
+    '......oao.......',
+    '.....oaaao......',
+    '..oooaaaaaooo...',
+    '.occaaaaaaacco..',
+    'occcaaaaaaaaacco',
+    'occaaaaaaaaaacco',
+    '.ooaaaabbaaaooo.',
+    '...oaaaaaaao....',
+    '....oao.oao.....',
+    '....oo...oo.....',
+    '................'
+  ],
+  rongxiao:[
+    '................',
+    '..oo........oo..',
+    '..oao......oao..',
+    '..oaaooooooaao..',
+    '..oaaaaaaaaaao..',
+    '.oawwaaaaawwaao.',
+    '.oawkaaaaawkaao.',
+    '.oaaaaaaaaaaaao.',
+    '.oaaaadddaaaaao.',
+    '.obaaaaaaaaaabo.',
+    '..obaaaabaaaabo.',
+    '..obaaaaaaaaabo.',
+    '...obaaaaaaabo..',
+    '....oao..oao....',
+    '....oo....oo....',
+    '................'
+  ]
+};
+
+/* 进化后额外装饰 */
+function drawExtra(ctx, kind, pal, unit){
+  var r = function(x,y,w,h,col){ ctx.fillStyle = col; ctx.fillRect(x*unit, y*unit, w*unit, h*unit); };
+  if(kind === 'crown'){
+    r(5,0,2,2,pal.d); r(9,0,2,2,pal.d); r(7,1,2,1,pal.d);
+    r(5,2,2,1,pal.c); r(9,2,2,1,pal.c);
+  } else if(kind === 'crest'){
+    r(6,0,1,3,pal.d); r(8,0,1,2,pal.d); r(10,1,1,2,pal.d);
+  } else if(kind === 'aura'){
+    r(2,1,1,1,pal.c); r(13,2,1,1,pal.c); r(1,10,1,1,pal.c); r(14,11,1,1,pal.c);
+    r(4,14,1,1,pal.c); r(11,14,1,1,pal.c);
+  }
+}
+
+var spriteCache = {};
+function drawSprite(canvas, speciesId, opts){
+  opts = opts || {};
+  var sp = SPECIES[speciesId];
+  if(!sp) return;
+  var grid = SPRITES[sp.sprite];
+  var pal = PALS[sp.pal] || PALS[sp.sprite];
+  var unit = opts.unit || 8;
+  var ctx = canvas.getContext('2d');
+  var W = 16 * unit;
+  if(canvas.width !== W || canvas.height !== W){ canvas.width = W; canvas.height = W; }
+  ctx.clearRect(0,0,W,W);
+  ctx.imageSmoothingEnabled = false;
+  for(var y=0;y<16;y++){
+    var row = grid[y] || '';
+    for(var x=0;x<16;x++){
+      var ch = row.charAt(x);
+      if(!ch || ch === '.') continue;
+      var col = pal[ch];
+      if(!col) continue;
+      ctx.fillStyle = col;
+      ctx.fillRect(x*unit, y*unit, unit, unit);
+    }
+  }
+  if(sp.extra) drawExtra(ctx, sp.extra, pal, unit);
+  if(opts.silhouette){
+    ctx.globalCompositeOperation = 'source-in';
+    ctx.fillStyle = opts.silhouette;
+    ctx.fillRect(0,0,W,W);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+}
+
+function monChip(canvas, speciesId, size){
+  var unit = Math.max(2, Math.round((size || 18) / 16));
+  drawSprite(canvas, speciesId, {unit:unit});
+}
+
+/* ---------------- 地块 ---------------- */
+function hash2(x, y){
+  var h = x * 374761393 + y * 668265263;
+  h = (h ^ (h >> 13)) * 1274126177;
+  return ((h ^ (h >> 16)) >>> 0) / 4294967296;
+}
+
+var TILE = 16;
+var PAL_TILE = {
+  grassA:'#4f7d4d', grassB:'#467244', grassC:'#5d8f57', grassD:'#3e663d',
+  dirtA:'#a08659', dirtB:'#8f7650', dirtC:'#b39a6b', dirtD:'#78613f',
+  tallA:'#3d6b3c', tallB:'#2f5630', tallC:'#5f9a52',
+  treeA:'#2f5a33', treeB:'#24472a', treeC:'#3f7742', trunk:'#5d4126', trunkD:'#43301c',
+  waterA:'#3a7fa8', waterB:'#2f6c92', waterC:'#7fc4e0',
+  wallA:'#c8bd9d', wallB:'#a99d80', roofA:'#7d4b3a', roofB:'#5d3628',
+  doorA:'#8a5c34', doorB:'#6b4527', knob:'#e8c46a',
+  springA:'#5fc6c0', springB:'#2f8f8a', stoneA:'#8d8778', stoneB:'#6b665a',
+  flowerA:'#f2a9c4', flowerB:'#f7dc6f', flowerC:'#c8a2f0'
+};
+
+function fillTile(ctx, ox, oy, s, col){
+  ctx.fillStyle = col;
+  ctx.fillRect(ox, oy, s * TILE, s * TILE);
+}
+function px(ctx, ox, oy, s, gx, gy, gw, gh, col){
+  ctx.fillStyle = col;
+  ctx.fillRect(ox + gx * s, oy + gy * s, gw * s, gh * s);
+}
+
+function drawGrassBase(ctx, ox, oy, s, x, y){
+  fillTile(ctx, ox, oy, s, PAL_TILE.grassA);
+  var h = hash2(x, y);
+  for(var i=0;i<5;i++){
+    var r1 = hash2(x*7+i, y*13+i*3), r2 = hash2(x*3+i*5, y*11+i);
+    var gx = Math.floor(r1*15), gy = Math.floor(r2*15);
+    px(ctx, ox, oy, s, gx, gy, 1, 1, (i%2 ? PAL_TILE.grassC : PAL_TILE.grassD));
+  }
+  if(h > 0.86){ px(ctx, ox, oy, s, 6, 9, 2, 1, PAL_TILE.grassC); px(ctx, ox, oy, s, 7, 8, 1, 2, PAL_TILE.grassC); }
+}
+
+function drawTile(ctx, ch, ox, oy, s, x, y, t){
+  switch(ch){
+    case ',':
+      drawGrassBase(ctx, ox, oy, s, x, y);
+      break;
+    case '.':
+      fillTile(ctx, ox, oy, s, PAL_TILE.dirtA);
+      for(var i=0;i<4;i++){
+        var r1 = hash2(x*11+i, y*17+i*2), r2 = hash2(x*5+i*3, y*7+i);
+        px(ctx, ox, oy, s, Math.floor(r1*14), Math.floor(r2*14), 2, 1, (i%2?PAL_TILE.dirtC:PAL_TILE.dirtB));
+      }
+      break;
+    case 'G':
+      drawGrassBase(ctx, ox, oy, s, x, y);
+      px(ctx, ox, oy, s, 2, 6, 1, 9, PAL_TILE.tallB);
+      px(ctx, ox, oy, s, 5, 4, 1, 11, PAL_TILE.tallC);
+      px(ctx, ox, oy, s, 8, 7, 1, 8, PAL_TILE.tallB);
+      px(ctx, ox, oy, s, 11, 3, 1, 12, PAL_TILE.tallC);
+      px(ctx, ox, oy, s, 14, 6, 1, 9, PAL_TILE.tallB);
+      px(ctx, ox, oy, s, 3, 12, 1, 3, PAL_TILE.tallA);
+      px(ctx, ox, oy, s, 9, 12, 1, 3, PAL_TILE.tallA);
+      break;
+    case 'T':
+      drawGrassBase(ctx, ox, oy, s, x, y);
+      px(ctx, ox, oy, s, 7, 10, 2, 5, PAL_TILE.trunk);
+      px(ctx, ox, oy, s, 7, 10, 1, 5, PAL_TILE.trunkD);
+      px(ctx, ox, oy, s, 3, 3, 10, 8, PAL_TILE.treeA);
+      px(ctx, ox, oy, s, 4, 2, 8, 2, PAL_TILE.treeC);
+      px(ctx, ox, oy, s, 2, 5, 3, 5, PAL_TILE.treeB);
+      px(ctx, ox, oy, s, 11, 5, 3, 5, PAL_TILE.treeB);
+      px(ctx, ox, oy, s, 4, 9, 8, 2, PAL_TILE.treeB);
+      px(ctx, ox, oy, s, 5, 4, 1, 1, PAL_TILE.treeC);
+      px(ctx, ox, oy, s, 9, 3, 1, 1, PAL_TILE.treeC);
+      px(ctx, ox, oy, s, 12, 8, 1, 2, PAL_TILE.treeA);
+      break;
+    case 'W':
+      fillTile(ctx, ox, oy, s, PAL_TILE.waterA);
+      px(ctx, ox, oy, s, 0, 0, 16, 1, PAL_TILE.waterB);
+      var ph = Math.sin((t/700) + x*0.9 + y*0.6);
+      px(ctx, ox, oy, s, 2 + Math.round(ph), 4, 4, 1, PAL_TILE.waterC);
+      px(ctx, ox, oy, s, 8 - Math.round(ph), 9, 5, 1, PAL_TILE.waterC);
+      px(ctx, ox, oy, s, 3, 12, 3, 1, PAL_TILE.waterB);
+      break;
+    case 'H':
+      fillTile(ctx, ox, oy, s, PAL_TILE.wallA);
+      px(ctx, ox, oy, s, 0, 0, 16, 2, PAL_TILE.roofB);
+      px(ctx, ox, oy, s, 0, 2, 16, 1, PAL_TILE.roofA);
+      for(var wy=6; wy<16; wy+=5) px(ctx, ox, oy, s, 0, wy, 16, 1, PAL_TILE.wallB);
+      px(ctx, ox, oy, s, 0, 0, 1, 16, PAL_TILE.wallB);
+      px(ctx, ox, oy, s, 15, 0, 1, 16, PAL_TILE.wallB);
+      break;
+    case 'D':
+      fillTile(ctx, ox, oy, s, PAL_TILE.wallA);
+      px(ctx, ox, oy, s, 0, 0, 16, 4, PAL_TILE.roofB);
+      px(ctx, ox, oy, s, 2, 5, 12, 11, PAL_TILE.doorA);
+      px(ctx, ox, oy, s, 3, 6, 10, 9, PAL_TILE.doorB);
+      px(ctx, ox, oy, s, 4, 7, 8, 1, PAL_TILE.doorA);
+      px(ctx, ox, oy, s, 11, 10, 1, 1, PAL_TILE.knob);
+      break;
+    case 'F':
+      drawGrassBase(ctx, ox, oy, s, x, y);
+      px(ctx, ox, oy, s, 4, 5, 1, 3, PAL_TILE.tallB);
+      px(ctx, ox, oy, s, 10, 8, 1, 3, PAL_TILE.tallB);
+      px(ctx, ox, oy, s, 3, 4, 3, 2, PAL_TILE.flowerA);
+      px(ctx, ox, oy, s, 9, 7, 3, 2, PAL_TILE.flowerB);
+      px(ctx, ox, oy, s, 6, 11, 2, 2, PAL_TILE.flowerC);
+      break;
+    case 'S':
+      drawGrassBase(ctx, ox, oy, s, x, y);
+      px(ctx, ox, oy, s, 7, 9, 2, 6, PAL_TILE.trunk);
+      px(ctx, ox, oy, s, 2, 3, 12, 7, '#c9a86a');
+      px(ctx, ox, oy, s, 3, 4, 10, 5, '#a8894f');
+      px(ctx, ox, oy, s, 4, 6, 8, 1, '#5d4126');
+      break;
+    case 'C':
+      drawGrassBase(ctx, ox, oy, s, x, y);
+      px(ctx, ox, oy, s, 1, 5, 14, 3, '#d9634f');
+      px(ctx, ox, oy, s, 1, 8, 14, 6, '#8a5c34');
+      px(ctx, ox, oy, s, 3, 10, 10, 1, '#6b4527');
+      px(ctx, ox, oy, s, 1, 5, 3, 3, '#f0e4c8');
+      px(ctx, ox, oy, s, 7, 5, 3, 3, '#f0e4c8');
+      px(ctx, ox, oy, s, 12, 5, 3, 3, '#f0e4c8');
+      break;
+    case 'A':
+      drawGrassBase(ctx, ox, oy, s, x, y);
+      px(ctx, ox, oy, s, 2, 6, 12, 9, PAL_TILE.stoneA);
+      px(ctx, ox, oy, s, 3, 7, 10, 7, PAL_TILE.stoneB);
+      var gl = Math.sin(t/420)*0.5+0.5;
+      ctx.globalAlpha = 0.65 + gl*0.35;
+      px(ctx, ox, oy, s, 4, 8, 8, 5, PAL_TILE.springA);
+      px(ctx, ox, oy, s, 5, 9, 3, 1, '#d8fffb');
+      ctx.globalAlpha = 1;
+      px(ctx, ox, oy, s, 6, 8, 1, 1, '#eafefc');
+      break;
+    case 'R':
+      drawGrassBase(ctx, ox, oy, s, x, y);
+      px(ctx, ox, oy, s, 3, 8, 10, 6, PAL_TILE.stoneA);
+      px(ctx, ox, oy, s, 4, 6, 8, 4, PAL_TILE.stoneB);
+      px(ctx, ox, oy, s, 5, 7, 2, 1, PAL_TILE.stoneA);
+      break;
+    case 'x':
+      drawGrassBase(ctx, ox, oy, s, x, y);
+      px(ctx, ox, oy, s, 2, 6, 2, 8, '#8a6a45');
+      px(ctx, ox, oy, s, 12, 6, 2, 8, '#8a6a45');
+      px(ctx, ox, oy, s, 2, 8, 12, 2, '#a8825a');
+      break;
+    case '=':
+      fillTile(ctx, ox, oy, s, PAL_TILE.dirtA);
+      px(ctx, ox, oy, s, 0, 2, 16, 12, PAL_TILE.dirtC);
+      px(ctx, ox, oy, s, 0, 6, 16, 2, PAL_TILE.dirtB);
+      break;
+    default:
+      drawGrassBase(ctx, ox, oy, s, x, y);
+  }
+}
+
+/* ---------------- 角色 ---------------- */
+var CHAR_PAL = {hair:'#3a2b23', hairL:'#5b4433', skin:'#f0c8a0', skinD:'#d3a179', shirt:'#5aa9e6', shirtD:'#3d7cb0', pants:'#33415c', shoe:'#20262e', pack:'#c9884f'};
+
+function drawHero(ctx, ox, oy, s, dir, frame){
+  var P = CHAR_PAL;
+  var r = function(x,y,w,h,col){ ctx.fillStyle=col; ctx.fillRect(ox+x*s, oy+y*s, w*s, h*s); };
+  var bob = frame ? 1 : 0;
+  // 影子
+  ctx.globalAlpha = .25; ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.ellipse(ox+8*s, oy+15.2*s, 5*s, 1.6*s, 0, 0, Math.PI*2); ctx.fill();
+  ctx.globalAlpha = 1;
+  if(dir === 'up'){
+    r(4,3,8,3,P.hair); r(4,6,8,4,P.hair); r(5,7,6,3,P.hairL);
+    r(4,10,8,4,P.shirt); r(4,12,8,2,P.shirtD);
+    r(3,10,1,4,P.skin); r(12,10,1,4,P.skin);
+    r(3,9,10,2,P.pack); r(4,9,2,1,P.shirtD);
+    r(5,14,2,1+bob,P.pants); r(9,14,2,1+bob,P.pants);
+    r(4,15,3,1,P.shoe); r(9,15,3,1,P.shoe);
+  } else if(dir === 'down'){
+    r(4,2,8,2,P.hair); r(3,4,10,3,P.hair); r(4,5,8,2,P.hairL);
+    r(5,7,6,2,P.skin); r(6,8,1,1,'#2a1f19'); r(9,8,1,1,'#2a1f19');
+    r(4,9,8,4,P.shirt); r(4,12,8,2,P.shirtD);
+    r(3,9,1,4,P.skin); r(12,9,1,4,P.skin);
+    r(5,13,2,1+bob,P.pants); r(9,13,2,1+bob,P.pants);
+    r(4,15,3,1,P.shoe); r(9,15,3,1,P.shoe);
+  } else {
+    var flip = (dir === 'left');
+    var X = function(x){ return flip ? (15 - x) : x; };
+    r(X(4),2,6,2,P.hair); r(X(3),4,7,3,P.hair); r(X(4),5,5,2,P.hairL);
+    r(X(4),7,5,2,P.skin);
+    r(X(8),7,1,1,'#2a1f19');
+    r(X(4),9,6,4,P.shirt); r(X(3),11,7,2,P.shirtD);
+    r(X(9),10,1,3,P.skin);
+    r(X(5),13,2,1+bob,P.pants); r(X(8),13,2,1+bob,P.pants);
+    r(X(4),15,3,1,P.shoe); r(X(8),15,3,1,P.shoe);
+  }
+}
+/* =========================================================
+   核心：状态、存档、音效、通用 UI
+   ========================================================= */
+var $ = function(sel, root){ return (root || document).querySelector(sel); };
+var $$ = function(sel, root){ return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
+function clamp(v, a, b){ return v < a ? a : (v > b ? b : v); }
+function rnd(n){ return Math.floor(Math.random() * n); }
+function chance(p){ return Math.random() < p; }
+function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+function pick(arr){ return arr[rnd(arr.length)]; }
+
+var SAVE_KEY = '口袋世界.save.v1';
+var SAVE_VERSION = 1;
+
+var game = null;
+var mode = 'boot';          // boot | title | world | battle
+var map = null;             // 当前地图运行时数据
+var cam = {x:0, y:0};
+var input = {up:false, down:false, left:false, right:false};
+var player = {x:0, y:0, dir:'down', moving:false, mt:0, fx:0, fy:0, tx:0, ty:0, walkT:0, stepCount:0, locked:false};
+var transitionLock = false;
+var dialogState = null;
+var battle = null;
+
+function newGame(){
+  return {
+    v:SAVE_VERSION, mapId:'town', x:10, y:8, dir:'down',
+    money:300,
+    items:{lingqiu:5, yinlingqiu:0, yaoshui:2, nongyao:0},
+    party:[], box:[], dex:{}, wins:0, steps:0,
+    flags:{intro:false, profGift:false, seenIntro:false},
+    playtime:0, savedAt:Date.now()
+  };
+}
+
+function stats(mon){
+  var b = SPECIES[mon.sp].base, L = mon.lvl;
+  return {
+    hp : Math.floor(2 * b.hp  * L / 100) + L + 12,
+    atk: Math.floor(2 * b.atk * L / 100) + 5,
+    def: Math.floor(2 * b.def * L / 100) + 5,
+    spd: Math.floor(2 * b.spd * L / 100) + 5
+  };
+}
+function maxHp(mon){ return stats(mon).hp; }
+function expToNext(lvl){ return Math.round(18 + 1.6 * lvl * lvl + 5 * lvl); }
+
+function movesFor(spId, lvl){
+  var list = [];
+  SPECIES[spId].learn.forEach(function(e){
+    if(e.lv <= lvl && list.indexOf(e.m) < 0) list.push(e.m);
+  });
+  if(list.length > 4) list = list.slice(list.length - 4);
+  if(!list.length) list = ['pinyin'];
+  return list.map(function(id){ return {id:id, pp:MOVES[id].pp}; });
+}
+
+function makeMon(spId, lvl){
+  var mon = {
+    uid: 'm' + Date.now().toString(36) + Math.floor(Math.random()*999),
+    sp: spId, lvl: lvl, exp: 0, hp: 0, moves: movesFor(spId, lvl)
+  };
+  mon.hp = maxHp(mon);
+  return mon;
+}
+
+/* ---------------- 存档 ---------------- */
+function saveGame(silent){
+  if(!game) return false;
+  game.savedAt = Date.now();
+  try{
+    localStorage.setItem(SAVE_KEY, JSON.stringify(game));
+    if(!silent) toast('已自动存档');
+    return true;
+  }catch(e){
+    if(!silent) toast('存档失败：浏览器禁用了本地存储', true);
+    return false;
+  }
+}
+function loadGame(){
+  try{
+    var raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) return null;
+    var d = JSON.parse(raw);
+    if(!d || d.v !== SAVE_VERSION) return null;
+    if(!Array.isArray(d.party) || !d.party.length) return null;
+    if(!MAP_DEFS[d.mapId]) d.mapId = 'town';
+    d.items = Object.assign({lingqiu:0, yinlingqiu:0, yaoshui:0, nongyao:0}, d.items || {});
+    d.dex = d.dex || {};
+    d.flags = Object.assign({intro:false, profGift:false, seenIntro:false}, d.flags || {});
+    d.party.forEach(function(m){ if(!SPECIES[m.sp]) m.sp = 'taichou'; if(!m.moves || !m.moves.length) m.moves = movesFor(m.sp, m.lvl); });
+    return d;
+  }catch(e){ return null; }
+}
+function clearSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+
+/* ---------------- 音效 ---------------- */
+var audio = {ctx:null, muted:false};
+function audioCtx(){
+  if(audio.muted) return null;
+  if(!audio.ctx){
+    try{
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return null;
+      audio.ctx = new AC();
+    }catch(e){ return null; }
+  }
+  if(audio.ctx.state === 'suspended'){ audio.ctx.resume(); }
+  return audio.ctx;
+}
+function tone(freq, dur, type, gain, delay){
+  var ctx = audioCtx(); if(!ctx) return;
+  var t0 = ctx.currentTime + (delay || 0);
+  var o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type || 'square';
+  o.frequency.setValueAtTime(freq, t0);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain || 0.05, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(ctx.destination);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+function slide(f1, f2, dur, type, gain){
+  var ctx = audioCtx(); if(!ctx) return;
+  var t0 = ctx.currentTime;
+  var o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type || 'square';
+  o.frequency.setValueAtTime(f1, t0);
+  o.frequency.exponentialRampToValueAtTime(Math.max(40, f2), t0 + dur);
+  g.gain.setValueAtTime(gain || 0.05, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(ctx.destination);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+function sfx(name){
+  if(audio.muted) return;
+  switch(name){
+    case 'ui':        tone(660, .05, 'square', .025); break;
+    case 'step':      tone(220, .035, 'triangle', .018); break;
+    case 'bump':      tone(120, .07, 'square', .03); break;
+    case 'encounter': tone(520,.08,'square',.045,0); tone(660,.08,'square',.045,.09); tone(880,.12,'square',.05,.18); break;
+    case 'hit':       slide(520, 180, .16, 'sawtooth', .05); break;
+    case 'superhit':  slide(760, 160, .22, 'sawtooth', .06); tone(300,.1,'square',.04,.06); break;
+    case 'weak':      slide(300, 240, .12, 'triangle', .04); break;
+    case 'faint':     slide(420, 90, .5, 'triangle', .05); break;
+    case 'throw':     slide(300, 700, .18, 'sine', .04); break;
+    case 'shake':     tone(380, .05, 'square', .03); break;
+    case 'catch':     tone(660,.09,'square',.05); tone(880,.09,'square',.05,.1); tone(1170,.2,'square',.05,.2); break;
+    case 'breakout':  slide(500, 240, .2, 'sawtooth', .05); break;
+    case 'levelup':   [523,659,784,1046].forEach(function(f,i){ tone(f,.12,'square',.045,i*.09); }); break;
+    case 'evolve':    [392,523,659,784,1046,1318].forEach(function(f,i){ tone(f,.16,'sine',.05,i*.11); }); break;
+    case 'heal':      [440,554,659].forEach(function(f,i){ tone(f,.16,'sine',.04,i*.08); }); break;
+    case 'buy':       tone(880,.07,'square',.04); tone(1170,.1,'square',.04,.08); break;
+    case 'error':     tone(180,.12,'square',.04); break;
+    case 'win':       [523,659,784,1046].forEach(function(f,i){ tone(f,.14,'triangle',.05,i*.07); }); break;
+  }
+}
+
+/* ---------------- 提示条 ---------------- */
+function toast(msg, warn){
+  var box = $('#toasts');
+  var el = document.createElement('div');
+  el.className = 'toast' + (warn ? ' warn' : '');
+  el.textContent = msg;
+  box.appendChild(el);
+  setTimeout(function(){ el.remove(); }, 1900);
+}
+
+/* ---------------- 弹窗 ---------------- */
+function openModal(html){
+  $('#modalCard').innerHTML = html;
+  $('#modalRoot').classList.remove('hidden');
+  $('#modalRoot').scrollTop = 0;
+}
+function closeModal(){
+  $('#modalRoot').classList.add('hidden');
+  if(mode === 'world' || mode === 'battle') renderHUD();
+}
+function modalOpen(){ return !$('#modalRoot').classList.contains('hidden'); }
+
+/* ---------------- 对话框 ---------------- */
+function showDialog(name, lines, onDone){
+  if(typeof lines === 'string') lines = [lines];
+  dialogState = {name:name, lines:lines.slice(), i:0, onDone:onDone};
+  $('#dlgName').textContent = name || '';
+  $('#dlgText').textContent = dialogState.lines[0];
+  $('#dialogBox').classList.remove('hidden');
+  sfx('ui');
+}
+function advanceDialog(){
+  if(!dialogState) return;
+  dialogState.i++;
+  if(dialogState.i >= dialogState.lines.length){
+    var cb = dialogState.onDone;
+    dialogState = null;
+    $('#dialogBox').classList.add('hidden');
+    if(typeof cb === 'function') cb();
+    return;
+  }
+  $('#dlgText').textContent = dialogState.lines[dialogState.i];
+  sfx('ui');
+}
+function dialogActive(){ return !!dialogState; }
+
+/* ---------------- HUD ---------------- */
+function renderHUD(){
+  if(!game) return;
+  $('#moneyVal').textContent = game.money;
+  var chips = $('#partyChips');
+  chips.innerHTML = '';
+  game.party.forEach(function(m){
+    var mx = maxHp(m);
+    var el = document.createElement('div');
+    el.className = 'chip' + (m.hp <= 0 ? ' dead' : (m.hp / mx < .3 ? ' low' : ''));
+    var c = document.createElement('canvas');
+    c.width = 18; c.height = 18; c.style.width = '18px'; c.style.height = '18px';
+    drawSprite(c, m.sp, {unit:2});
+    var info = document.createElement('div');
+    var nm = document.createElement('div');
+    nm.className = 'cn';
+    nm.textContent = SPECIES[m.sp].name + ' L' + m.lvl;
+    var bar = document.createElement('div');
+    bar.className = 'cb';
+    var fill = document.createElement('i');
+    fill.style.width = Math.max(0, Math.round(m.hp / mx * 100)) + '%';
+    bar.appendChild(fill);
+    info.appendChild(nm); info.appendChild(bar);
+    el.appendChild(c); el.appendChild(info);
+    chips.appendChild(el);
+  });
+  var chip = $('#placeChip');
+  if(chip && map) chip.textContent = MAP_DEFS[map.id].name;
+}
+
+/* ---------------- 面板：队伍 ---------------- */
+function openParty(){
+  if(!game) return;
+  var rows = game.party.map(function(m, i){
+    var mx = maxHp(m), st = stats(m), sp = SPECIES[m.sp];
+    var need = expToNext(m.lvl);
+    var moves = m.moves.map(function(mv){
+      return '<span class="move-pill"><span>' + MOVES[mv.id].name + '</span><span>' +
+        (MOVES[mv.id].power ? MOVES[mv.id].power : '—') + ' · PP ' + mv.pp + '/' + MOVES[mv.id].pp + '</span></span>';
+    }).join('');
+    return '' +
+      '<div class="mon-row ' + (i === 0 ? 'lead' : '') + ' ' + (m.hp <= 0 ? 'fainted' : '') + '">' +
+        '<canvas width="40" height="40"></canvas>' +
+        '<div>' +
+          '<div class="mr-name">' + sp.name + ' <span class="muted">' + TYPES[sp.type].name + ' · Lv.' + m.lvl + (i === 0 ? ' · 出战' : '') + '</span></div>' +
+          '<div class="mr-sub">HP ' + Math.max(0, m.hp) + '/' + mx + '　攻 ' + st.atk + '　防 ' + st.def + '　速 ' + st.spd + '</div>' +
+          '<div class="bar"><i style="width:' + Math.round(clamp(m.hp / mx, 0, 1) * 100) + '%' + (m.hp <= 0 ? ';background:#ef6b6b' : (m.hp / mx < .3 ? ';background:#f08a5d' : '')) + '"></i></div>' +
+          '<div class="bar exp"><i style="width:' + Math.round(clamp(m.exp / need, 0, 1) * 100) + '%"></i></div>' +
+          '<div class="move-list">' + moves + '</div>' +
+        '</div>' +
+        '<div>' + (i === 0 ? '<span class="small-btn muted">出战中</span>' : '<button class="small-btn primary" data-lead="' + i + '">设为出战</button>') + '</div>' +
+      '</div>';
+  }).join('');
+  var boxInfo = game.box.length ? '<p class="muted">收纳盒里还有 ' + game.box.length + ' 只灵兽（队伍满 6 只时会自动存到这里）。</p>' : '';
+  openModal('' +
+    '<div class="modal-head"><div class="modal-title">队伍</div><button class="modal-close" data-close="1">关闭</button></div>' +
+    '<p class="muted">排在最前面的灵兽会在战斗中出场。体力为 0 的灵兽需要到青禾镇的疗愈泉恢复。</p>' +
+    '<div class="panel-grid">' + rows + '</div>' + boxInfo +
+    '<div class="divider"></div>' +
+    '<p class="note">胜场 ' + game.wins + ' · 图鉴已捕获 ' + caughtCount() + '/' + DEX_ORDER.length + ' 种 · 金币 ' + game.money + '</p>');
+  $$('#modalCard .mon-row canvas').forEach(function(c, i){ drawSprite(c, game.party[i].sp, {unit:2.5}); });
+  $$('#modalCard [data-lead]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var i = +b.getAttribute('data-lead');
+      var m = game.party.splice(i, 1)[0];
+      game.party.unshift(m);
+      sfx('ui'); saveGame(true); openParty(); renderHUD();
+    });
+  });
+  bindClose();
+}
+
+function caughtCount(){
+  var n = 0;
+  DEX_ORDER.forEach(function(k){ if(game.dex[k] && game.dex[k].caught > 0) n++; });
+  return n;
+}
+
+/* ---------------- 面板：图鉴 ---------------- */
+function openDex(){
+  if(!game) return;
+  var cells = DEX_ORDER.map(function(k, idx){
+    var sp = SPECIES[k], rec = game.dex[k] || null;
+    var known = rec && (rec.seen || rec.caught);
+    var el = document.createElement('div');
+    el.className = 'dex-cell' + (known ? '' : ' unknown');
+    el.innerHTML = '<canvas width="52" height="52"></canvas>' +
+      '<div class="dn">' + (known ? sp.name : '？？？') + '</div>' +
+      '<div class="dx">NO.' + String(sp.dex).padStart(3, '0') + '　' + (known ? TYPES[sp.type].name : '—') + '</div>' +
+      (rec && rec.caught ? '<div class="caught">已捕获 ' + rec.caught + '</div>' : '');
+    return el;
+  });
+  var chartRows = TYPE_ORDER.map(function(t){
+    var strong = TYPE_ORDER.filter(function(d){ return (CHART[t] && CHART[t][d] === 1.6); }).map(function(d){ return TYPES[d].name; }).join('、');
+    var weak = TYPE_ORDER.filter(function(d){ return (CHART[t] && CHART[t][d] === 0.6); }).map(function(d){ return TYPES[d].name; }).join('、');
+    return '<div class="tc-row"><span style="color:' + TYPES[t].color + '">' + TYPES[t].name + '</span><span class="muted">克 ' + strong + '　·　被克 ' + weak + '</span></div>';
+  }).join('');
+  openModal('' +
+    '<div class="modal-head"><div class="modal-title">灵兽图鉴</div><button class="modal-close" data-close="1">关闭</button></div>' +
+    '<p class="muted">已捕获 ' + caughtCount() + ' / ' + DEX_ORDER.length + ' 种。未遇见的灵兽只显示编号。</p>' +
+    '<div class="dex-grid" id="dexGrid"></div>' +
+    '<div class="divider"></div>' +
+    '<div class="modal-title" style="font-size:13px">属相关系</div>' +
+    '<div class="type-chart">' + chartRows + '</div>' +
+    '<p class="note">克制时伤害 ×1.6，被抗时 ×0.6；技能属性与本灵兽属性相同时额外 ×1.3。</p>');
+  var grid = $('#dexGrid');
+  cells.forEach(function(el){ grid.appendChild(el); });
+  DEX_ORDER.forEach(function(k, i){
+    var rec = game.dex[k];
+    var known = rec && (rec.seen || rec.caught);
+    var cv = cells[i].querySelector('canvas');
+    drawSprite(cv, k, {unit:3.25, silhouette: known ? null : '#1b2632'});
+  });
+  bindClose();
+}
+
+/* ---------------- 面板：背包 ---------------- */
+function openBag(){
+  if(!game) return;
+  var rows = Object.keys(ITEMS).map(function(k){
+    var it = ITEMS[k], n = game.items[k] || 0;
+    var useBtn = '';
+    if(it.heal) useBtn = '<button class="small-btn primary" data-use="' + k + '"' + (n > 0 ? '' : ' disabled') + '>使用</button>';
+    return '<div class="bag-item"><div><div class="bi-name">' + it.name + '</div><div class="bi-des">' + it.desc + '</div></div>' +
+      '<div class="bi-num">×' + n + '</div>' + useBtn + '</div>';
+  }).join('');
+  openModal('' +
+    '<div class="modal-head"><div class="modal-title">背包</div><button class="modal-close" data-close="1">关闭</button></div>' +
+    '<p class="muted">灵球只能在战斗中投出；药水在战斗外可以给队伍里的灵兽回复体力。</p>' +
+    '<div class="panel-grid">' + rows + '</div>');
+  $$('#modalCard [data-use]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var k = b.getAttribute('data-use');
+      if(!(game.items[k] > 0)) return;
+      openPotionTarget(k);
+    });
+  });
+  bindClose();
+}
+function openPotionTarget(itemKey){
+  var it = ITEMS[itemKey];
+  var rows = game.party.map(function(m, i){
+    var mx = maxHp(m);
+    return '<button class="mon-row" style="width:100%;text-align:left" data-heal="' + i + '"' + (m.hp >= mx || m.hp <= 0 ? ' disabled' : '') + '>' +
+      '<canvas width="40" height="40"></canvas><div><div class="mr-name">' + SPECIES[m.sp].name + ' Lv.' + m.lvl + '</div>' +
+      '<div class="mr-sub">HP ' + m.hp + '/' + mx + '</div></div><div class="muted">' + (m.hp >= mx ? '已满' : (m.hp <= 0 ? '需去疗愈泉' : '可回复')) + '</div></button>';
+  }).join('');
+  openModal('' +
+    '<div class="modal-head"><div class="modal-title">使用' + it.name + '</div><button class="modal-close" data-close="1">返回</button></div>' +
+    '<div class="panel-grid">' + rows + '</div>');
+  $$('#modalCard .mon-row canvas').forEach(function(c, i){ drawSprite(c, game.party[i].sp, {unit:2.5}); });
+  $$('#modalCard [data-heal]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var i = +b.getAttribute('data-heal'), m = game.party[i], mx = maxHp(m);
+      if(m.hp >= mx || m.hp <= 0) return;
+      game.items[itemKey]--;
+      var before = m.hp;
+      m.hp = Math.min(mx, m.hp + it.heal);
+      sfx('heal'); saveGame(true); renderHUD();
+      toast(SPECIES[m.sp].name + ' 回复 ' + (m.hp - before) + ' 点体力');
+      openBag();
+    });
+  });
+  bindClose();
+}
+
+/* ---------------- 面板：商店 ---------------- */
+function openShop(){
+  if(!game) return;
+  var rows = SHOP_STOCK.map(function(k){
+    var it = ITEMS[k];
+    return '<div class="shop-row"><div><div class="sp-name">' + it.name + '</div><div class="sp-desc">' + it.desc + '</div></div>' +
+      '<div class="sp-price">' + it.price + ' 金</div>' +
+      '<button class="small-btn primary" data-buy="' + k + '">购买</button></div>';
+  }).join('');
+  openModal('' +
+    '<div class="modal-head"><div class="modal-title">阿鹿的杂货摊</div><button class="modal-close" data-close="1">关闭</button></div>' +
+    '<p class="muted">身上的金币：<span style="color:#f2c14e" id="shopMoney">' + game.money + '</span>　·　按钮按 1 个来卖</p>' +
+    '<div class="shop-grid">' + rows + '</div>' +
+    '<p class="note">灵球在战斗中越靠后越难收：先把野生灵兽的体力压到三成以下再投最划算。</p>');
+  $$('#modalCard [data-buy]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var k = b.getAttribute('data-buy'), it = ITEMS[k];
+      if(game.money < it.price){ sfx('error'); toast('金币不够', true); return; }
+      game.money -= it.price;
+      game.items[k] = (game.items[k] || 0) + 1;
+      sfx('buy'); saveGame(true); renderHUD();
+      $('#shopMoney').textContent = game.money;
+      toast('买到 1 个' + it.name);
+    });
+  });
+  bindClose();
+}
+
+/* ---------------- 面板：设置 ---------------- */
+function openSettings(){
+  if(!game) return;
+  var saved = game.savedAt ? new Date(game.savedAt).toLocaleString('zh-CN') : '尚未存档';
+  openModal('' +
+    '<div class="modal-head"><div class="modal-title">设置</div><button class="modal-close" data-close="1">关闭</button></div>' +
+    '<div class="settings-list">' +
+      '<div class="set-row"><div><div>音效</div><div class="muted">程序生成的短音，不含任何现成旋律</div></div>' +
+        '<button class="small-btn" id="setSound">' + (audio.muted ? '已关闭' : '已开启') + '</button></div>' +
+      '<div class="set-row"><div><div>存档</div><div class="muted">自动保存在本机浏览器 · ' + saved + '</div></div>' +
+        '<button class="small-btn" id="setSaveNow">立即存档</button></div>' +
+      '<div class="set-row"><div><div>重新开始</div><div class="muted">清空进度，回到选择初始灵兽</div></div>' +
+        '<button class="small-btn danger" id="setReset">重新开始</button></div>' +
+    '</div>' +
+    '<div class="divider"></div>' +
+    '<div class="modal-title" style="font-size:13px">操作</div>' +
+    '<p class="muted">方向键 / WASD 移动　空格 / Enter 互动与确认　Esc 关闭面板　战斗中数字键 1-4 选技能。<br>手机：左下十字键移动，右下「互动」按钮对话、开启商店或疗愈泉。</p>' +
+    '<div class="divider"></div>' +
+    '<p class="note">玩法参考经典怪物捕捉 RPG，角色、怪物、地名、技能与美术均为原创，不含任何任天堂相关商标或素材。</p>');
+  var soundBtn = $('#setSound');
+  soundBtn.addEventListener('click', function(){
+    audio.muted = !audio.muted;
+    soundBtn.textContent = audio.muted ? '已关闭' : '已开启';
+    if(!audio.muted) sfx('ui');
+    saveGame(true);
+  });
+  $('#setSaveNow').addEventListener('click', function(){ saveGame(); });
+  $('#setReset').addEventListener('click', function(){
+    openModal('' +
+      '<div class="modal-head"><div class="modal-title">确定重新开始？</div><button class="modal-close" data-close="1">取消</button></div>' +
+      '<p class="muted">这会删除本机的存档：队伍、图鉴、金币和地图进度都会清零，无法撤销。</p>' +
+      '<div class="panel-grid" style="grid-template-columns:1fr 1fr;margin-top:12px">' +
+        '<button class="small-btn" data-close="1">保留进度</button>' +
+        '<button class="small-btn danger" id="resetConfirm">删除存档并重来</button>' +
+      '</div>');
+    bindClose();
+    $('#resetConfirm').addEventListener('click', function(){
+      clearSave();
+      game = null;
+      mode = 'title';
+      closeModal();
+      startTitle();
+    });
+  });
+  bindClose();
+}
+function bindClose(){
+  $$('#modalCard [data-close]').forEach(function(b){
+    b.addEventListener('click', function(){ sfx('ui'); closeModal(); });
+  });
+}
+/* =========================================================
+   世界：地图、移动、渲染、互动
+   ========================================================= */
+var DIRS = {up:{x:0,y:-1}, down:{x:0,y:1}, left:{x:-1,y:0}, right:{x:1,y:0}};
+var BLOCKED = 'TWHDSxCRA';
+var MOVE_MS = 132;
+var canvas, ctx, dpr = 1, tile = 32, viewW = 0, viewH = 0;
+
+function normalizeRows(rows){
+  var w = 0;
+  rows.forEach(function(r){ if(r.length > w) w = r.length; });
+  return rows.map(function(r){ return r + new Array(w - r.length + 1).join('T'); });
+}
+
+function loadMap(id, x, y, dir){
+  var def = MAP_DEFS[id];
+  var rows = normalizeRows(def.rows);
+  map = {
+    id: id, w: rows[0].length, h: rows.length, rows: rows,
+    npcs: (def.npcs || []).map(function(n){ return Object.assign({}, n); })
+  };
+  player.x = x; player.y = y; player.dir = dir || 'down';
+  player.moving = false; player.fx = 0; player.fy = 0; player.walkT = 0; player.stepCount = 0;
+  game.mapId = id; game.x = x; game.y = y; game.dir = player.dir;
+  var hint = $('#hintChip');
+  if(hint){
+    hint.textContent = id === 'town' ? '方向键 / WASD 移动 · 空格 与人对话'
+      : id === 'meadow' ? '走进高草会遭遇野生灵兽 · 压低血量再投灵球' : '这里的灵兽更强，先补满体力再来';
+  }
+  renderHUD();
+  centerCam(true);
+}
+
+function tileAt(x, y){
+  if(!map || x < 0 || y < 0 || x >= map.w || y >= map.h) return 'T';
+  return map.rows[y].charAt(x);
+}
+
+function npcAt(x, y){
+  if(!map) return null;
+  for(var i=0;i<map.npcs.length;i++){
+    var n = map.npcs[i];
+    if(n.x === x && n.y === y) return n;
+  }
+  return null;
+}
+
+function walkable(x, y){
+  var ch = tileAt(x, y);
+  if(BLOCKED.indexOf(ch) >= 0) return false;
+  if(npcAt(x, y)) return false;
+  return true;
+}
+
+/* ---------------- 画布尺寸 ---------------- */
+function resizeCanvas(){
+  if(!canvas) return;
+  var rect = $('#stage').getBoundingClientRect();
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  viewW = Math.max(240, Math.round(rect.width));
+  viewH = Math.max(200, Math.round(rect.height));
+  canvas.width = Math.round(viewW * dpr);
+  canvas.height = Math.round(viewH * dpr);
+  canvas.style.width = viewW + 'px';
+  canvas.style.height = viewH + 'px';
+  tile = clamp(Math.round(Math.min(viewW / 14.5, viewH / 10.5)), 22, 62);
+  ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  centerCam(true);
+}
+
+function centerCam(snap){
+  if(!map) return;
+  var px = player.x * tile + player.fx * tile;
+  var py = player.y * tile + player.fy * tile;
+  var tx = clamp(px + tile / 2 - viewW / 2, 0, Math.max(0, map.w * tile - viewW));
+  var ty = clamp(py + tile / 2 - viewH / 2, 0, Math.max(0, map.h * tile - viewH));
+  if(snap || map.w * tile <= viewW) cam.x = map.w * tile <= viewW ? (map.w * tile - viewW) / 2 : tx;
+  if(snap || map.h * tile <= viewH) cam.y = map.h * tile <= viewH ? (map.h * tile - viewH) / 2 : ty;
+  if(!snap){ cam.x = tx; cam.y = ty; }
+}
+
+/* ---------------- 主循环 ---------------- */
+var lastTs = 0, running = false;
+function loop(ts){
+  if(!running) return;
+  var dt = Math.min(60, ts - lastTs || 16);
+  lastTs = ts;
+  update(dt, ts);
+  drawWorld(ts);
+  requestAnimationFrame(loop);
+}
+
+function update(dt, ts){
+  if(!game) return;
+  if(mode === 'world' && !dialogActive() && !modalOpen() && !transitionLock){
+    if(player.moving){
+      player.mt += dt;
+      var k = clamp(player.mt / MOVE_MS, 0, 1);
+      var fx0 = player.fromX, fy0 = player.fromY;
+      player.fx = (player.tx - fx0) * k;
+      player.fy = (player.ty - fy0) * k;
+      if(k >= 1){
+        player.x = player.tx; player.y = player.ty;
+        player.fx = 0; player.fy = 0; player.moving = false;
+        game.x = player.x; game.y = player.y;
+        onStepDone();
+      }
+    } else {
+      var dir = input.up ? 'up' : (input.down ? 'down' : (input.left ? 'left' : (input.right ? 'right' : null)));
+      if(dir){
+        player.walkT += dt;
+        if(player.walkT > 118){ player.walkT = 0; tryMove(dir); }
+      } else {
+        player.walkT = 118;
+      }
+    }
+  }
+  if(map) centerCam(false);
+  // 小满的随机游走
+  if(mode === 'world' && map && map.id === 'town' && Math.random() < 0.0015){
+    var kid = npcAt(13, 12);
+    if(kid && !kid._moving){
+      var d = pick([[0,1],[0,-1],[1,0],[-1,0]]);
+      var nx2 = kid.x + d[0], ny2 = kid.y + d[1];
+      if(walkable(nx2, ny2) && Math.abs(nx2 - 13) < 3 && Math.abs(ny2 - 12) < 3){ kid.x = nx2; kid.y = ny2; }
+    }
+  }
+}
+
+function tryMove(dir){
+  if(player.moving || transitionLock || dialogActive() || modalOpen() || mode !== 'world') return;
+  player.dir = dir;
+  var d = DIRS[dir];
+  var nx = player.x + d.x, ny = player.y + d.y;
+  if(!walkable(nx, ny)){
+    sfx('bump');
+    return;
+  }
+  player.fromX = player.x; player.fromY = player.y;
+  player.tx = nx; player.ty = ny;
+  player.moving = true; player.mt = 0; player.fx = 0; player.fy = 0;
+  if(tileAt(nx, ny) === 'G') sfx('step');
+}
+
+function onStepDone(){
+  game.steps++;
+  var def = MAP_DEFS[map.id];
+  var ex = def.exits[player.x + ',' + player.y];
+  if(ex){ doTransition(ex); return; }
+  if(def.encounter && tileAt(player.x, player.y) === 'G'){
+    player.stepCount++;
+    if(player.stepCount > 1 && chance(def.encounter.rate)){ startEncounter(); return; }
+  }
+  if(game.steps % 10 === 0) saveGame(true);
+  renderHUD();
+}
+
+function doTransition(ex){
+  if(transitionLock) return;
+  transitionLock = true;
+  var fade = $('#fadeLayer');
+  fade.style.opacity = '1';
+  sfx('step');
+  setTimeout(function(){
+    loadMap(ex.to, ex.x, ex.y, ex.dir);
+    if(ex.to !== 'town') markSeenNearby();
+    fade.style.opacity = '0';
+    setTimeout(function(){ transitionLock = false; }, 180);
+    saveGame(true);
+  }, 240);
+}
+
+function markSeenNearby(){}
+
+/* ---------------- 绘制 ---------------- */
+function drawWorld(ts){
+  if(!ctx || !map) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#0d141a';
+  ctx.fillRect(0, 0, viewW, viewH);
+  var ox = Math.round(cam.x), oy = Math.round(cam.y);
+  var x0 = Math.floor(ox / tile), y0 = Math.floor(oy / tile);
+  var x1 = Math.ceil((ox + viewW) / tile), y1 = Math.ceil((oy + viewH) / tile);
+  var s = tile / TILE;
+  for(var y = y0; y <= y1; y++){
+    for(var x = x0; x <= x1; x++){
+      var ch = tileAt(x, y);
+      var dx = Math.round(x * tile - ox), dy = Math.round(y * tile - oy);
+      drawTile(ctx, ch, dx, dy, s, x, y, ts || 0);
+    }
+  }
+  // NPC
+  map.npcs.forEach(function(n){
+    var dx = Math.round(n.x * tile - ox), dy = Math.round(n.y * tile - oy);
+    drawNPC(ctx, n, dx, dy, s, ts || 0);
+  });
+  // 玩家
+  var pdx = Math.round(player.x * tile + player.fx * tile - ox);
+  var pdy = Math.round(player.y * tile + player.fy * tile - oy);
+  var frame = (player.moving && Math.floor((ts || 0) / 150) % 2 === 0) ? 1 : 0;
+  drawHero(ctx, pdx, pdy, s, player.dir, frame);
+  // 暗角
+  if(MAP_DEFS[map.id].dark){
+    var g = ctx.createRadialGradient(pdx + tile/2, pdy + tile/2, tile*1.6, pdx + tile/2, pdy + tile/2, Math.max(viewW, viewH)*0.75);
+    g.addColorStop(0, 'rgba(6,10,16,0)');
+    g.addColorStop(1, 'rgba(6,10,16,.62)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, viewW, viewH);
+  }
+}
+
+function drawNPC(c, n, dx, dy, s, ts){
+  var bob = Math.sin((ts || 0) / 520 + n.x) * 0.6;
+  dy += Math.round(bob * s);
+  var r = function(x,y,w,h,col){ c.fillStyle = col; c.fillRect(dx+x*s, dy+y*s, w*s, h*s); };
+  c.globalAlpha = .25; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(dx+8*s, dy+15.3*s, 5*s, 1.6*s, 0, 0, Math.PI*2); c.fill();
+  c.globalAlpha = 1;
+  var pal = {
+    elder:{cloth:'#6b8f5a', hair:'#e8e4d8', skin:'#eec8a2'},
+    merchant:{cloth:'#c98a4f', hair:'#3a2b23', skin:'#f0c8a0'},
+    keeper:{cloth:'#4f8fa0', hair:'#2b3a44', skin:'#f0c8a0'},
+    kid:{cloth:'#e07a8a', hair:'#4a3222', skin:'#f5d0ae'},
+    explorer:{cloth:'#7a6ba8', hair:'#3a2b23', skin:'#e8c49c'},
+    sign:{cloth:'#c9a86a', hair:'#5d4126', skin:'#c9a86a'}
+  }[n.sprite || 'kid'] || {cloth:'#888', hair:'#333', skin:'#eee'};
+  if(n.sprite === 'sign'){ r(3,5,10,7,'#c9a86a'); r(4,6,8,5,'#a8894f'); r(7,12,2,3,'#5d4126'); return; }
+  r(4,2,8,3,pal.hair); r(4,5,8,4,pal.skin);
+  r(6,7,1,1,'#2a1f19'); r(9,7,1,1,'#2a1f19');
+  r(4,9,8,5,pal.cloth); r(4,13,3,2,'#333'); r(9,13,3,2,'#333');
+  if(n.sprite === 'elder'){ r(4,12,8,1,'#e8e4d8'); }
+  if(n.sprite === 'kid'){ r(4,2,2,3,'#4a3222'); r(10,2,2,3,'#4a3222'); }
+}
+
+/* ---------------- 互动 ---------------- */
+function interact(){
+  if(!game || mode !== 'world' || transitionLock || modalOpen()) return;
+  if(dialogActive()){ advanceDialog(); return; }
+  var d = DIRS[player.dir];
+  var tx = player.x + d.x, ty = player.y + d.y;
+  var npc = npcAt(tx, ty);
+  if(npc){ talkTo(npc); return; }
+  var ch = tileAt(tx, ty);
+  if(ch === 'A'){
+    healParty();
+    return;
+  }
+  if(ch === 'C'){ sfx('ui'); openShop(); return; }
+  if(ch === 'D'){
+    if(ty <= 4 && tx < 10){
+      showDialog('门里传出翻书声', ['芽伯的研究所。敲门的话，他会从窗口探头出来。'], null);
+    } else {
+      showDialog('门口', ['门上挂着一块小牌子：出门请关灯。'], null);
+    }
+    return;
+  }
+  if(ch === 'S'){
+    showDialog('木牌', ['北面是青禾镇。南边的萤草坡里住着不少野生灵兽，', '没有灵球就别走太深。'], null);
+    return;
+  }
+  if(ch === 'W'){ showDialog('水面', ['水面很浅，能看见细小的波纹。'], null); return; }
+  if(ch === 'R'){ showDialog('石堆', ['有人把石头堆成了小塔，大概是为了记路。'], null); return; }
+}
+
+function talkTo(npc){
+  if(npc.id === 'prof'){
+    if(!game.flags.profGift){
+      game.flags.profGift = true;
+      game.items.lingqiu += 3;
+      sfx('buy'); saveGame(true); renderHUD();
+      showDialog('芽伯', [
+        '哦，是' + '你' + '啊。要走远路，光靠一只灵兽可不够。',
+        '这 3 个灵球拿去。草丛里遇到能打的，先把它打虚，再投球。',
+        '（获得 灵球 ×3，请打开背包确认）'
+      ], null);
+    } else {
+      showDialog('芽伯', [pick([
+        '图鉴上的空格还多着呢。慢慢来。',
+        '属性相克要记：草叶怕焰心，焰心怕潮汐，潮汐怕草叶，岩垒和疾风各有各的克星。',
+        '灵兽体力越低，灵球越容易收住。这一条比什么都重要。'
+      ])], null);
+    }
+    return;
+  }
+  if(npc.id === 'deer'){ sfx('ui'); openShop(); return; }
+  if(npc.id === 'spring'){ healParty(); return; }
+  if(npc.id === 'kid'){
+    showDialog('小满', [pick([
+      '你知道吗，两只一样的灵兽也能长得不太一样，要看它住在哪儿。',
+      '我今天在草坡边上看到一只很快的东西，翅膀是淡紫色的。',
+      '疗愈泉的水是温的，不信你去试。'
+    ])], null);
+    return;
+  }
+  if(npc.id === 'explorer'){
+    showDialog('勘探者', [
+      '碎星林比萤草坡深，里面的灵兽普遍强一截。',
+      '我在这里见过苔冠兽，那种厚苔的家伙很难收，得先把它打虚。'
+    ], null);
+    return;
+  }
+  if(npc.id === 'sign2'){
+    showDialog('木牌', ['← 萤草坡方向上有一片水塘，浪纹鲵常在那里冒头。', '→ 向东走可以进碎星林，灵兽更强，量力而行。'], null);
+    return;
+  }
+  showDialog(npc.name || '路人', ['……'], null);
+}
+
+function healParty(){
+  var healed = false;
+  game.party.forEach(function(m){ if(m.hp < maxHp(m)) healed = true; m.hp = maxHp(m); });
+  sfx('heal');
+  saveGame(true); renderHUD();
+  showDialog('泉守', [healed ? '手伸进泉水里吧，灵兽的伤一会儿就好。' : '都还是满的，那就洗个手再走。'], null);
+}
+/* =========================================================
+   战斗：遭遇、技能、捕捉、成长、进化
+   ========================================================= */
+function recordDex(spId, seen, caught){
+  var r = game.dex[spId] || (game.dex[spId] = {seen:false, caught:0});
+  if(seen) r.seen = true;
+  if(caught) r.caught = (r.caught || 0) + 1;
+}
+
+function weightedPick(table){
+  var total = 0;
+  table.forEach(function(t){ total += t.w; });
+  var r = Math.random() * total;
+  for(var i=0;i<table.length;i++){ r -= table[i].w; if(r <= 0) return table[i]; }
+  return table[table.length-1];
+}
+function randRange(a, b){ return a + rnd(b - a + 1); }
+
+function setBattleLog(l1, l2){
+  $('#logLine1').textContent = l1 || '';
+  $('#logLine2').textContent = l2 || '';
+}
+
+function updateBars(){
+  if(!battle) return;
+  var foe = battle.enemy, fmx = maxHp(foe);
+  var fr = clamp(foe.hp / fmx, 0, 1);
+  $('#enemyHpFill').style.width = (fr * 100) + '%';
+  var fbar = $('#enemyHpBar');
+  fbar.classList.toggle('mid', fr < .5 && fr >= .22);
+  fbar.classList.toggle('low', fr < .22);
+  var me = game.party[0], mmx = maxHp(me);
+  var mr = clamp(me.hp / mmx, 0, 1);
+  $('#playerHpFill').style.width = (mr * 100) + '%';
+  var mbar = $('#playerHpBar');
+  mbar.classList.toggle('mid', mr < .5 && mr >= .22);
+  mbar.classList.toggle('low', mr < .22);
+  $('#playerHpText').textContent = Math.max(0, me.hp) + ' / ' + mmx;
+  var need = expToNext(me.lvl);
+  $('#playerExpText').textContent = 'EXP ' + Math.round(clamp(me.exp / need, 0, 1) * 100) + '%';
+}
+
+function drawBattleSprites(){
+  if(!battle) return;
+  drawSprite($('#enemySprite'), battle.enemy.sp, {unit:12});
+  drawSprite($('#playerSprite'), game.party[0].sp, {unit:14});
+}
+
+function renderBattle(){
+  if(!battle) return;
+  var foe = battle.enemy, me = game.party[0];
+  $('#enemyName').textContent = SPECIES[foe.sp].name;
+  $('#enemyLv').textContent = 'Lv.' + foe.lvl;
+  $('#enemyType').textContent = TYPES[SPECIES[foe.sp].type].name;
+  $('#enemyType').style.color = TYPES[SPECIES[foe.sp].type].color;
+  $('#playerName').textContent = SPECIES[me.sp].name;
+  $('#playerLv').textContent = 'Lv.' + me.lvl;
+  $('#battlePlace').textContent = MAP_DEFS[game.mapId].name;
+  drawBattleSprites();
+  updateBars();
+  renderHUD();
+}
+
+function setActions(on){
+  $$('#battleActions .act').forEach(function(b){ b.disabled = !on; });
+  $('#battleActions').style.opacity = on ? '1' : '.55';
+}
+function showSub(html){
+  var sub = $('#battleSub');
+  sub.innerHTML = html;
+  sub.classList.remove('hidden');
+}
+function hideSub(){ $('#battleSub').classList.add('hidden'); $('#battleSub').innerHTML = ''; }
+
+/* ---------------- 遭遇 ---------------- */
+async function startEncounter(){
+  if(!map || mode !== 'world') return;
+  input.up = input.down = input.left = input.right = false;
+  mode = 'battle';
+  var ex = $('#encFlash');
+  ex.classList.remove('on');
+  void ex.offsetWidth;
+  ex.classList.add('on');
+  sfx('encounter');
+  await sleep(430);
+  var def = MAP_DEFS[map.id].encounter;
+  var entry = weightedPick(def.table);
+  var lvl = randRange(entry.lv[0], entry.lv[1]);
+  var foe = makeMon(entry.sp, lvl);
+  recordDex(entry.sp, true, false);
+  battle = {enemy:foe, busy:true, over:false, turn:1, fleeTries:0, needSwitch:false};
+  $('#battleLayer').classList.remove('hidden');
+  $('#mapOverlay').classList.add('hidden');
+  renderBattle();
+  setActions(false);
+  setBattleLog('草丛里窜出了野生的' + SPECIES[foe.sp].name + '！', '（Lv.' + foe.lvl + '）');
+  await sleep(700);
+  battle.busy = false;
+  setActions(true);
+  saveGame(true);
+}
+
+/* ---------------- 伤害计算 ---------------- */
+function computeDamage(atkMon, defMon, mv){
+  var a = stats(atkMon), d = stats(defMon);
+  var eff = (mv.type && mv.type !== 'none') ? typeMult(mv.type, SPECIES[defMon.sp].type) : 1;
+  var stab = (mv.type && mv.type === SPECIES[atkMon.sp].type) ? 1.3 : 1;
+  var crit = chance(1 / 16) ? 1.5 : 1;
+  var roll = 0.86 + Math.random() * 0.15;
+  var raw = ((2 * atkMon.lvl / 5 + 2) * mv.power * a.atk / Math.max(1, d.def)) / 50 + 2;
+  var dmg = Math.max(1, Math.floor(raw * eff * stab * crit * roll));
+  return {dmg:dmg, eff:eff, crit:crit > 1, stab:stab > 1};
+}
+
+function shakeEl(el){
+  if(!el) return;
+  el.classList.remove('shake-hit');
+  void el.offsetWidth;
+  el.classList.add('shake-hit');
+  setTimeout(function(){ el.classList.remove('shake-hit'); }, 400);
+}
+
+/* ---------------- 执行技能 ---------------- */
+async function executeMove(side, moveId){
+  if(!battle || battle.over) return;
+  var isP = side === 'player';
+  var mon = isP ? game.party[0] : battle.enemy;
+  var foe = isP ? battle.enemy : game.party[0];
+  var mv = MOVES[moveId] || MOVES.pinyin;
+  if(isP){
+    var rec = null;
+    mon.moves.forEach(function(x){ if(x.id === moveId) rec = x; });
+    if(rec && rec.pp > 0) rec.pp--;
+  }
+  setBattleLog((isP ? '' : '野生的 ') + SPECIES[mon.sp].name + ' 使出了 ' + mv.name + '！', '');
+  await sleep(430);
+  if(!chance(mv.acc)){
+    setBattleLog(mv.name + ' 擦着边过去了，没有命中。', '');
+    sfx('weak');
+    await sleep(620);
+    return;
+  }
+  var res = computeDamage(mon, foe, mv);
+  shakeEl(isP ? $('#enemyWrap') : $('#playerWrap'));
+  sfx(res.eff > 1 ? 'superhit' : (res.eff < 1 ? 'weak' : 'hit'));
+  await sleep(240);
+  foe.hp = Math.max(0, foe.hp - res.dmg);
+  updateBars();
+  var extra = '';
+  if(res.crit) extra += '会心一击！';
+  if(res.eff > 1) extra += '效果很好！';
+  else if(res.eff < 1) extra += '效果不太好……';
+  setBattleLog((isP ? '野生的 ' : '') + SPECIES[foe.sp].name + ' 受到 ' + res.dmg + ' 点伤害。', extra);
+  await sleep(720);
+  if(foe.hp <= 0) await handleFaint(isP ? 'enemy' : 'player');
+}
+
+/* ---------------- 敌方行动 ---------------- */
+function chooseEnemyMove(){
+  var foe = battle.enemy;
+  var usable = foe.moves.filter(function(m){ return m.pp > 0 || MOVES[m.id].pp === 0; });
+  if(!usable.length) return 'pinyin';
+  var scored = usable.map(function(m){
+    var mv = MOVES[m.id];
+    var eff = (mv.type && mv.type !== 'none') ? typeMult(mv.type, SPECIES[game.party[0].sp].type) : 1;
+    var stab = (mv.type === SPECIES[foe.sp].type) ? 1.3 : 1;
+    return {id:m.id, score:mv.power * eff * stab * mv.acc};
+  });
+  scored.sort(function(a, b){ return b.score - a.score; });
+  if(chance(0.72)) return scored[0].id;
+  return pick(usable).id;
+}
+async function enemyMove(){
+  if(!battle || battle.over) return;
+  var id = chooseEnemyMove();
+  var rec = null;
+  battle.enemy.moves.forEach(function(m){ if(m.id === id) rec = m; });
+  if(rec && rec.pp > 0) rec.pp--;
+  await executeMove('enemy', id);
+}
+
+/* ---------------- 回合入口 ---------------- */
+async function playerAct(kind, payload){
+  if(!battle || battle.busy || battle.over) return;
+  var me = game.party[0], foe = battle.enemy;
+  battle.busy = true;
+  setActions(false);
+  hideSub();
+  try{
+    if(kind === 'run'){
+      var p = clamp(0.42 + (stats(me).spd - stats(foe).spd) * 0.012 + battle.fleeTries * 0.12, 0.18, 0.94);
+      battle.fleeTries++;
+      setBattleLog('你试着抽身退开……', '');
+      await sleep(560);
+      if(chance(p)){
+        sfx('ui');
+        setBattleLog('成功脱身了！', '');
+        await sleep(700);
+        await endBattle(false);
+        return;
+      }
+      setBattleLog('没能跑掉！', '');
+      sfx('error');
+      await sleep(520);
+      await enemyMove();
+      return;
+    }
+    if(kind === 'ball'){
+      await throwBall(payload);
+      return;
+    }
+    if(kind === 'item'){
+      await usePotionInBattle(payload);
+      return;
+    }
+    if(kind === 'move'){
+      var mySpd = stats(me).spd, foeSpd = stats(foe).spd;
+      var myFirst = mySpd >= foeSpd;
+      if(myFirst){
+        await executeMove('player', payload);
+        if(!battle || battle.over) return;
+        await enemyMove();
+      } else {
+        await enemyMove();
+        if(!battle || battle.over) return;
+        await executeMove('player', payload);
+      }
+    }
+  }catch(err){
+    console.error(err);
+    setBattleLog('……（回合结算出了点问题，已跳过这一回合）', '');
+  }finally{
+    if(battle && !battle.over && !battle.needSwitch){
+      battle.busy = false;
+      setActions(true);
+      battle.turn++;
+    }
+  }
+}
+
+/* ---------------- 捕捉 ---------------- */
+function catchChance(foe, ballKey){
+  var mx = maxHp(foe);
+  var hpFactor = (3 * mx - 2 * foe.hp) / (3 * mx);
+  var base = SPECIES[foe.sp].catch / 255;
+  var bonus = ITEMS[ballKey].ball;
+  var lvFactor = clamp(1 - (foe.lvl - 5) * 0.015, 0.72, 1);
+  return clamp(hpFactor * base * bonus * 1.65 * lvFactor, 0.04, 0.95);
+}
+
+async function throwBall(ballKey){
+  if(!game.items[ballKey]){
+    setBattleLog('没有' + ITEMS[ballKey].name + '了。', '');
+    sfx('error');
+    await sleep(600);
+    return;
+  }
+  game.items[ballKey]--;
+  renderHUD();
+  sfx('throw');
+  setBattleLog('你投出了' + ITEMS[ballKey].name + '！', '');
+  var ball = $('#ballEl');
+  $('#captureLayer').classList.remove('hidden');
+  ball.style.cssText = 'opacity:1;left:0;top:0;';
+  try{
+    var stage = $('#stage').getBoundingClientRect();
+    var t = $('#enemyWrap').getBoundingClientRect();
+    var x0 = stage.width * 0.22, y0 = stage.height * 0.66;
+    var x1 = t.left - stage.left + t.width / 2 - 11;
+    var y1 = t.top - stage.top + t.height / 2 - 11;
+    var anim = ball.animate([
+      {transform:'translate(' + x0 + 'px,' + y0 + 'px) scale(.75) rotate(0deg)', offset:0},
+      {transform:'translate(' + ((x0 + x1) / 2) + 'px,' + (Math.min(y0, y1) - 70) + 'px) scale(1.05) rotate(200deg)', offset:.55},
+      {transform:'translate(' + x1 + 'px,' + y1 + 'px) scale(1) rotate(420deg)', offset:1}
+    ], {duration:600, easing:'ease-out'});
+    await anim.finished;
+  }catch(e){
+    await sleep(520);
+  }
+  ball.style.transform = 'translate(' + (x1 || 0) + 'px,' + (y1 || 0) + 'px)';
+  sfx('shake');
+  setBattleLog(ITEMS[ballKey].name + '把野生的' + SPECIES[battle.enemy.sp].name + '收了进去。', '');
+  await sleep(360);
+  var success = chance(catchChance(battle.enemy, ballKey));
+  var shakes = success ? 3 : rnd(3);
+  for(var i=0;i<shakes;i++){
+    try{
+      await ball.animate([{transform:'translateX(0) rotate(0)'},{transform:'translateX(-4px) rotate(-8deg)'},{transform:'translateX(4px) rotate(8deg)'},{transform:'translateX(0) rotate(0)'}], {duration:420}).finished;
+    }catch(e){ await sleep(200); }
+    sfx('shake');
+  }
+  if(success){
+    await captureSuccess();
+  } else {
+    sfx('breakout');
+    setBattleLog('球晃了' + (shakes || 1) + '下——', '野生的' + SPECIES[battle.enemy.sp].name + '挣脱了出来！');
+    await sleep(760);
+    try{ await ball.animate([{opacity:1},{opacity:0}], {duration:250}).finished; }catch(e){}
+    ball.style.opacity = '0';
+    $('#captureLayer').classList.add('hidden');
+    await enemyMove();
+  }
+}
+
+async function captureSuccess(){
+  var foe = battle.enemy;
+  battle.over = true;
+  sfx('catch');
+  $('#ballEl').classList.add('caught');
+  var name = SPECIES[foe.sp].name;
+  recordDex(foe.sp, true, true);
+  foe.exp = 0;
+  if(game.party.length < 6){
+    game.party.push(foe);
+    setBattleLog('抓到了野生的' + name + '！', '它加入了你的队伍。');
+  } else {
+    game.box.push(foe);
+    setBattleLog('抓到了野生的' + name + '！', '队伍已满，它被先送到收纳盒。');
+  }
+  renderHUD();
+  await sleep(1100);
+  $('#ballEl').classList.remove('caught');
+  $('#captureLayer').classList.add('hidden');
+  await endBattle(true);
+}
+
+/* ---------------- 药水（战斗内） ---------------- */
+async function usePotionInBattle(itemKey){
+  var it = ITEMS[itemKey], me = game.party[0], mx = maxHp(me);
+  if(!game.items[itemKey]){
+    setBattleLog('没有' + it.name + '了。', '');
+    await sleep(500);
+    return;
+  }
+  if(me.hp >= mx){
+    setBattleLog(SPECIES[me.sp].name + ' 现在体力是满的。', '');
+    await sleep(520);
+    return;
+  }
+  game.items[itemKey]--;
+  var before = me.hp;
+  me.hp = Math.min(mx, me.hp + it.heal);
+  sfx('heal');
+  setBattleLog('你给' + SPECIES[me.sp].name + '用了' + it.name + '。', '回复了 ' + (me.hp - before) + ' 点体力。');
+  updateBars(); renderHUD();
+  await sleep(760);
+  await enemyMove();
+}
+
+/* ---------------- 战败 / 升级 / 进化 ---------------- */
+async function handleFaint(who){
+  if(!battle) return;
+  if(who === 'enemy'){
+    sfx('faint');
+    var ew = $('#enemyWrap');
+    ew.classList.add('faint');
+    setBattleLog('野生的' + SPECIES[battle.enemy.sp].name + ' 倒下了！', '');
+    await sleep(760);
+    ew.classList.remove('faint');
+    battle.over = true;
+    await gainBattleExp();
+    await finishWin();
+  } else {
+    sfx('faint');
+    var pw = $('#playerWrap');
+    pw.classList.add('faint');
+    setBattleLog(SPECIES[game.party[0].sp].name + ' 站不住了！', '');
+    await sleep(760);
+    pw.classList.remove('faint');
+    var alive = false;
+    for(var i=1;i<game.party.length;i++){ if(game.party[i].hp > 0) alive = true; }
+    if(alive){
+      battle.needSwitch = true;
+      battle.busy = false;
+      setBattleLog('换一只灵兽继续吧。', '');
+      openSwitchMenu(true);
+    } else {
+      battle.over = true;
+      await whiteout();
+    }
+  }
+}
+
+function learnMoves(mon){
+  var learned = [];
+  SPECIES[mon.sp].learn.forEach(function(e){
+    if(e.lv !== mon.lvl) return;
+    if(mon.moves.some(function(m){ return m.id === e.m; })) return;
+    var rec = {id:e.m, pp:MOVES[e.m].pp};
+    if(mon.moves.length < 4) mon.moves.push(rec);
+    else mon.moves[0] = rec;
+    learned.push(MOVES[e.m].name);
+  });
+  return learned;
+}
+
+async function gainBattleExp(){
+  var mon = game.party[0], foe = battle.enemy;
+  var amount = Math.round(SPECIES[foe.sp].exp * foe.lvl * 0.8 + 6);
+  var gold = 8 + foe.lvl * 4 + rnd(6);
+  game.money += gold;
+  game.wins++;
+  renderHUD();
+  setBattleLog(SPECIES[mon.sp].name + ' 获得 ' + amount + ' 点经验。', '捡到 ' + gold + ' 金。');
+  await sleep(760);
+  mon.exp += amount;
+  var ups = 0, allLearned = [];
+  while(mon.exp >= expToNext(mon.lvl) && mon.lvl < 60){
+    mon.exp -= expToNext(mon.lvl);
+    var oldMax = maxHp(mon);
+    mon.lvl++;
+    mon.hp = Math.min(maxHp(mon), mon.hp + (maxHp(mon) - oldMax));
+    ups++;
+    learnMoves(mon).forEach(function(n){ allLearned.push(n); });
+  }
+  if(ups){
+    sfx('levelup');
+    setBattleLog(SPECIES[mon.sp].name + ' 升到了 Lv.' + mon.lvl + '！',
+      allLearned.length ? '学会了 ' + allLearned.join('、') + '。' : '各项能力都提高了。');
+    updateBars(); renderHUD();
+    await sleep(1000);
+    var evo = SPECIES[mon.sp].evolve;
+    if(evo && mon.lvl >= evo.lv) await evolveMon(mon);
+  }
+}
+
+async function evolveMon(mon){
+  var evo = SPECIES[mon.sp].evolve;
+  if(!evo) return;
+  var fromName = SPECIES[mon.sp].name, toName = SPECIES[evo.to].name;
+  var layer = $('#evoLayer'), cv = $('#evoSprite');
+  drawSprite(cv, mon.sp, {unit:12});
+  $('#evoText').textContent = fromName + ' 浑身发亮，正在蜕变……';
+  layer.classList.remove('hidden');
+  sfx('evolve');
+  await sleep(420);
+  layer.classList.add('flash');
+  var tint = 0;
+  var iv = setInterval(function(){
+    tint = 1 - tint;
+    drawSprite(cv, mon.sp, {unit:12, silhouette: tint ? '#f6fdff' : null});
+  }, 150);
+  await sleep(1500);
+  clearInterval(iv);
+  var oldMax = maxHp(mon);
+  mon.sp = evo.to;
+  mon.hp = Math.min(maxHp(mon), mon.hp + (maxHp(mon) - oldMax));
+  var learned = learnMoves(mon);
+  layer.classList.remove('flash');
+  drawSprite(cv, mon.sp, {unit:12});
+  $('#evoText').textContent = fromName + ' 蜕变成了 ' + toName + '！';
+  sfx('levelup');
+  await sleep(1400);
+  layer.classList.add('hidden');
+  setBattleLog(fromName + ' 蜕变成了 ' + toName + '！', learned.length ? '学会了 ' + learned.join('、') + '。' : '');
+  renderBattle();
+  await sleep(600);
+}
+
+async function finishWin(){
+  setBattleLog('战斗结束。', '');
+  await sleep(700);
+  await endBattle(true);
+}
+
+async function whiteout(){
+  setBattleLog('你眼前一白……', '');
+  await sleep(600);
+  var fade = $('#fadeLayer');
+  fade.style.opacity = '1';
+  await sleep(340);
+  var lost = Math.floor(game.money * 0.1);
+  game.money = Math.max(0, game.money - lost);
+  game.party.forEach(function(m){ m.hp = maxHp(m); });
+  hideBattle();
+  loadMap('town', 12, 9, 'up');
+  mode = 'world';
+  fade.style.opacity = '0';
+  saveGame(true);
+  renderHUD();
+  showDialog('泉守', [
+    '有人把你和灵兽一起背回了泉边。',
+    '都缓过来了。' + (lost ? '路上掉了 ' + lost + ' 金，人没事就好。' : '下次别硬撑。')
+  ], null);
+}
+
+async function endBattle(won){
+  if(won){
+    var foe = battle.enemy;
+    recordDex(foe.sp, true, false);
+  }
+  hideBattle();
+  mode = 'world';
+  map && loadMap(game.mapId, game.x, game.y, player.dir);
+  saveGame(true);
+  renderHUD();
+}
+
+function hideBattle(){
+  $('#battleLayer').classList.add('hidden');
+  $('#mapOverlay').classList.remove('hidden');
+  hideSub();
+  battle = null;
+  setActions(true);
+  lastTs = 0;
+}
+
+/* ---------------- 战斗子菜单 ---------------- */
+function openMoveMenu(){
+  if(!battle || battle.busy) return;
+  var me = game.party[0];
+  var rows = me.moves.map(function(mv, i){
+    var m = MOVES[mv.id];
+    var disabled = mv.pp <= 0;
+    var tp = m.type && m.type !== 'none' ? TYPES[m.type] : {name:'无属性', color:'#93a4b3'};
+    return '<button class="sub-row" data-move="' + i + '"' + (disabled ? ' disabled' : '') + '>' +
+      '<span>' + m.name + '</span>' +
+      '<span class="mv-type" style="color:' + tp.color + '">' + tp.name + '</span>' +
+      '<span class="mv-pp">威力 ' + (m.power || '—') + '</span>' +
+      '<span class="mv-pp">PP ' + mv.pp + '/' + m.pp + '</span>' +
+      '</button>';
+  }).join('');
+  showSub('<div class="sub-head"><span>选择技能（数字键 1-4）</span><button class="sub-close" data-subclose="1">返回</button></div>' + rows);
+  $$('#battleSub [data-move]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var i = +b.getAttribute('data-move');
+      var mv = game.party[0].moves[i];
+      if(!mv || mv.pp <= 0){ sfx('error'); return; }
+      playerAct('move', mv.id);
+    });
+  });
+  bindSubClose();
+}
+function openBallMenu(){
+  if(!battle || battle.busy) return;
+  var keys = ['lingqiu','yinlingqiu'];
+  var rows = keys.map(function(k){
+    var n = game.items[k] || 0;
+    var pct = Math.round(catchChance(battle.enemy, k) * 100);
+    return '<button class="sub-row" data-ball="' + k + '"' + (n ? '' : ' disabled') + '>' +
+      '<span>' + ITEMS[k].name + '</span>' +
+      '<span class="mv-type" style="color:#8fd0ff">成功率约 ' + pct + '%</span>' +
+      '<span class="mv-pp">持有 ' + n + '</span>' +
+      '<span class="mv-pp">' + ITEMS[k].price + ' 金</span>' +
+      '</button>';
+  }).join('');
+  showSub('<div class="sub-head"><span>投出捕获装置（血量越低越容易）</span><button class="sub-close" data-subclose="1">返回</button></div>' + rows +
+    '<p class="note" style="margin:2px 4px 0">灵球用完可以回青禾镇找阿鹿买。</p>');
+  $$('#battleSub [data-ball]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var k = b.getAttribute('data-ball');
+      if(!game.items[k]){ sfx('error'); return; }
+      playerAct('ball', k);
+    });
+  });
+  bindSubClose();
+}
+function openPotionMenuInBattle(){
+  if(!battle || battle.busy) return;
+  var keys = ['yaoshui','nongyao'];
+  var rows = keys.map(function(k){
+    var n = game.items[k] || 0;
+    return '<button class="sub-row" data-pot="' + k + '"' + (n ? '' : ' disabled') + '>' +
+      '<span>' + ITEMS[k].name + '</span>' +
+      '<span class="mv-type" style="color:#9ee7b6">回复 ' + ITEMS[k].heal + '</span>' +
+      '<span class="mv-pp">持有 ' + n + '</span>' +
+      '<span class="mv-pp">' + ITEMS[k].price + ' 金</span>' +
+      '</button>';
+  }).join('');
+  showSub('<div class="sub-head"><span>使用药水（会消耗这一回合）</span><button class="sub-close" data-subclose="1">返回</button></div>' + rows);
+  $$('#battleSub [data-pot]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var k = b.getAttribute('data-pot');
+      if(!game.items[k]){ sfx('error'); return; }
+      playerAct('item', k);
+    });
+  });
+  bindSubClose();
+}
+function openSwitchMenu(forced){
+  if(!battle) return;
+  var rows = game.party.map(function(m, i){
+    var mx = maxHp(m);
+    var dead = m.hp <= 0;
+    return '<button class="sub-row" data-switch="' + i + '"' + (dead || i === 0 ? ' disabled' : '') + '>' +
+      '<span>' + SPECIES[m.sp].name + ' Lv.' + m.lvl + (i === 0 ? '（出战中）' : '') + '</span>' +
+      '<span class="mv-type" style="color:' + TYPES[SPECIES[m.sp].type].color + '">' + TYPES[SPECIES[m.sp].type].name + '</span>' +
+      '<span class="mv-pp">HP ' + Math.max(0, m.hp) + '/' + mx + '</span>' +
+      '<span class="mv-pp">' + (dead ? '已倒下' : '') + '</span>' +
+      '</button>';
+  }).join('');
+  showSub('<div class="sub-head"><span>' + (forced ? '选择接替出战的灵兽' : '更换出战灵兽') + '</span>' +
+    (forced ? '' : '<button class="sub-close" data-subclose="1">返回</button>') + '</div>' + rows);
+  $$('#battleSub [data-switch]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var i = +b.getAttribute('data-switch');
+      doSwitch(i, forced);
+    });
+  });
+  if(!forced) bindSubClose();
+}
+async function doSwitch(i, forced){
+  if(!battle || i <= 0 || game.party[i].hp <= 0) return;
+  var m = game.party.splice(i, 1)[0];
+  game.party.unshift(m);
+  sfx('ui');
+  hideSub();
+  battle.needSwitch = false;
+  renderBattle();
+  setBattleLog('上吧，' + SPECIES[m.sp].name + '！', '');
+  await sleep(600);
+  if(forced){
+    battle.busy = false;
+    setActions(true);
+    battle.turn++;
+  } else {
+    battle.busy = true;
+    setActions(false);
+    await enemyMove();
+    if(battle && !battle.over && !battle.needSwitch){
+      battle.busy = false;
+      setActions(true);
+      battle.turn++;
+    }
+  }
+}
+function bindSubClose(){
+  $$('#battleSub [data-subclose]').forEach(function(b){
+    b.addEventListener('click', function(){ sfx('ui'); hideSub(); });
+  });
+}
+/* =========================================================
+   启动、标题、输入绑定、美术预览
+   ========================================================= */
+function startTitle(){
+  mode = 'title';
+  game = newGame();
+  loadMap('town', 10, 8, 'down');
+  running = true;
+  if(!lastTs){ lastTs = 0; requestAnimationFrame(loop); }
+  var cards = STARTERS.map(function(id, i){
+    var sp = SPECIES[id];
+    var mv = movesFor(id, 5).map(function(m){ return MOVES[m.id].name; }).join(' · ');
+    return '<button class="starter" data-starter="' + id + '">' +
+      '<canvas width="64" height="64"></canvas>' +
+      '<div class="st-name">' + sp.name + '</div>' +
+      '<div class="st-desc" style="color:' + TYPES[sp.type].color + '">' + TYPES[sp.type].name + '</div>' +
+      '<div class="st-desc">' + sp.desc + '</div>' +
+      '<div class="st-desc" style="color:#93a4b3">' + mv + '</div>' +
+      '</button>';
+  }).join('');
+  openModal('' +
+    '<div class="modal-head"><div><div class="title-big">口袋世界</div><div class="title-sub">灵兽捕捉 · 养成 · 图鉴</div></div></div>' +
+    '<p class="muted">玩法参考经典怪物捕捉 RPG，角色、怪物、地名、技能与美术全部原创。<br>选一只灵兽作为同伴，然后往南边的萤草坡走。</p>' +
+    '<div class="divider"></div>' +
+    '<div class="modal-title" style="font-size:13px">选择你的第一只灵兽</div>' +
+    '<div class="starter-grid" id="starterGrid">' + cards + '</div>' +
+    '<div class="divider"></div>' +
+    '<div class="note">键盘：方向键 / WASD 移动，空格互动，Esc 打开菜单。<br>手机：用屏幕左下十字键移动，右下「互动」按钮对话与购买。</div>');
+  var grid = $('#starterGrid');
+  $$('#starterGrid canvas').forEach(function(c, i){ drawSprite(c, STARTERS[i], {unit:4}); });
+  $$('#starterGrid [data-starter]').forEach(function(b){
+    b.addEventListener('click', function(){
+      startNewGame(b.getAttribute('data-starter'));
+    });
+  });
+}
+
+function startNewGame(starterId){
+  game = newGame();
+  game.party.push(makeMon(starterId, 5));
+  recordDex(starterId, true, true);
+  game.flags.seenIntro = true;
+  game.flags.intro = true;
+  loadMap('town', 10, 8, 'down');
+  mode = 'world';
+  closeModal();
+  sfx('ui');
+  saveGame(true);
+  renderHUD();
+  showIntroCard();
+}
+
+function showIntroCard(){
+  var me = game.party[0];
+  openModal('' +
+    '<div class="modal-head"><div class="modal-title">开始冒险</div><button class="modal-close" data-close="1">稍后</button></div>' +
+    '<p class="muted">' + SPECIES[me.sp].name + ' 跟在你脚边，看上去有点紧张。</p>' +
+    '<div class="tip-card">' +
+      '<div class="tip-line"><span class="tk">↑↓←→</span><span>方向键、WASD 或屏幕十字键移动，一格一格走。</span></div>' +
+      '<div class="tip-line"><span class="tk">草</span><span>走进<b>高草</b>会随机遇到野生灵兽，镇子里的草丛最安全。</span></div>' +
+      '<div class="tip-line"><span class="tk">技</span><span>战斗里选技能攻击，属性相克能打出更高伤害。</span></div>' +
+      '<div class="tip-line"><span class="tk">球</span><span>把对方血量压低，再投<b>灵球</b>，成功率会高很多。</span></div>' +
+      '<div class="tip-line"><span class="tk">泉</span><span>镇上的疗愈泉免费回复全队，商店卖球和药水。</span></div>' +
+    '</div>' +
+    '<p class="note">进度会自动保存在这台设备的浏览器里，关掉页面再打开可以接着玩。</p>' +
+    '<div class="panel-grid" style="grid-template-columns:1fr;margin-top:10px">' +
+      '<button class="small-btn primary" data-close="1" style="padding:11px">开始冒险</button>' +
+    '</div>');
+  bindClose();
+}
+
+/* ---------------- 输入 ---------------- */
+var KEYMAP = {
+  ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right',
+  w:'up', s:'down', a:'left', d:'right', W:'up', S:'down', A:'left', D:'right'
+};
+
+function bindInput(){
+  window.addEventListener('keydown', function(e){
+    if(e.key === 'Tab') return;
+    var dir = KEYMAP[e.key];
+    if(dir){
+      e.preventDefault();
+      input[dir] = true;
+      if(dialogActive() || modalOpen()) return;
+      if(mode === 'world' && !player.moving && !transitionLock) tryMove(dir);
+      return;
+    }
+    if(e.key === ' ' || e.key === 'Enter'){
+      e.preventDefault();
+      if(dialogActive()){ advanceDialog(); return; }
+      if(modalOpen()){ return; }
+      if(mode === 'world') interact();
+      return;
+    }
+    if(e.key === 'Escape'){
+      e.preventDefault();
+      if(!$('#battleSub').classList.contains('hidden')){ hideSub(); return; }
+      if(dialogActive()){ advanceDialog(); return; }
+      if(modalOpen()){ closeModal(); return; }
+      if(mode === 'world') openSettings();
+      return;
+    }
+    if(/^[1-4]$/.test(e.key) && mode === 'battle' && battle && !battle.busy){
+      if($('#battleSub').classList.contains('hidden')) openMoveMenu();
+      var idx = +e.key - 1;
+      var mv = game.party[0].moves[idx];
+      if(mv && mv.pp > 0) playerAct('move', mv.id);
+    }
+  });
+  window.addEventListener('keyup', function(e){
+    var dir = KEYMAP[e.key];
+    if(dir) input[dir] = false;
+  });
+  window.addEventListener('blur', function(){ input.up = input.down = input.left = input.right = false; });
+
+  $$('#controls [data-dir]').forEach(function(b){
+    var dir = b.getAttribute('data-dir');
+    var press = function(e){
+      e.preventDefault();
+      input[dir] = true;
+      b.classList.add('press');
+      if(mode === 'world' && !player.moving && !transitionLock && !dialogActive() && !modalOpen()) tryMove(dir);
+    };
+    var release = function(e){
+      if(e) e.preventDefault();
+      input[dir] = false;
+      b.classList.remove('press');
+    };
+    b.addEventListener('pointerdown', press);
+    b.addEventListener('pointerup', release);
+    b.addEventListener('pointercancel', release);
+    b.addEventListener('pointerleave', release);
+    b.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+  });
+
+  $('#actBtn').addEventListener('click', function(){
+    if(dialogActive()){ advanceDialog(); return; }
+    if(mode === 'world') interact();
+  });
+  $('#menuBtn').addEventListener('click', function(){
+    if(mode === 'battle'){ hideSub(); return; }
+    if(modalOpen()) closeModal(); else openSettings();
+  });
+  $$('#hud [data-panel]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var p = b.getAttribute('data-panel');
+      if(mode === 'battle'){ toast('战斗中不能整理背包', true); return; }
+      if(p === 'party') openParty();
+      else if(p === 'dex') openDex();
+      else if(p === 'bag') openBag();
+      else openSettings();
+    });
+  });
+
+  $$('#battleActions [data-act]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var act = b.getAttribute('data-act');
+      if(!battle || battle.busy || battle.over) return;
+      if(act === 'fight') openMoveMenu();
+      else if(act === 'ball') openBallMenu();
+      else if(act === 'item') openPotionMenuInBattle();
+      else if(act === 'run') playerAct('run');
+    });
+  });
+
+  $('#dialogBox').addEventListener('click', function(){ advanceDialog(); });
+  $('#stage').addEventListener('click', function(e){
+    if(dialogActive()) advanceDialog();
+  });
+  $('#modalRoot').addEventListener('click', function(e){
+    if(e.target === $('#modalRoot')) closeModal();
+  });
+  window.addEventListener('beforeunload', function(){ if(game && mode !== 'title') saveGame(true); });
+}
+
+/* ---------------- 美术预览（?art=1） ---------------- */
+function showArtGallery(){
+  var cells = DEX_ORDER.map(function(k){
+    var sp = SPECIES[k];
+    return '<div class="dex-cell"><canvas width="96" height="96" data-sp="' + k + '"></canvas>' +
+      '<div class="dn">' + sp.name + '</div><div class="dx">' + TYPES[sp.type].name + '</div></div>';
+  }).join('');
+  openModal('<div class="modal-head"><div class="modal-title">美术预览</div><button class="modal-close" data-close="1">关闭</button></div>' +
+    '<div class="dex-grid">' + cells + '</div>' +
+    '<div class="divider"></div>' +
+    '<canvas id="tileStrip" width="720" height="120" style="width:100%;image-rendering:pixelated;border-radius:8px;background:#0e151b"></canvas>' +
+    '<div class="divider"></div>' +
+    '<canvas id="heroStrip" width="360" height="120" style="width:100%;image-rendering:pixelated;background:#3d6b3c;border-radius:8px"></canvas>');
+  $$('#modalCard [data-sp]').forEach(function(c){ drawSprite(c, c.getAttribute('data-sp'), {unit:6}); });
+  var tc = $('#tileStrip'), tx = tc.getContext('2d');
+  tx.imageSmoothingEnabled = false;
+  var list = [',','.','G','T','W','H','D','F','S','C','A','R','x','='];
+  list.forEach(function(ch, i){ drawTile(tx, ch, i * 48, 0, 3, i, 3, 500); });
+  var hc = $('#heroStrip'), hx = hc.getContext('2d');
+  hx.imageSmoothingEnabled = false;
+  [['down',0],['down',1],['left',0],['right',1],['up',0],['up',1]].forEach(function(d, i){ drawHero(hx, i*60, 10, 3, d[0], d[1]); });
+  bindClose();
+}
+
+/* ---------------- 启动 ---------------- */
+function boot(){
+  canvas = $('#mapCanvas');
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+  if(window.ResizeObserver){ try{ new ResizeObserver(function(){ resizeCanvas(); }).observe($('#stage')); }catch(e){} }
+  bindInput();
+  if(location.search.indexOf('art=1') >= 0){
+    game = newGame();
+    loadMap('town', 10, 8, 'down');
+    running = true; requestAnimationFrame(loop);
+    showArtGallery();
+    return;
+  }
+  var saved = loadGame();
+  if(saved){
+    game = saved;
+    mode = 'world';
+    loadMap(game.mapId, game.x, game.y, game.dir);
+    running = true;
+    lastTs = 0;
+    requestAnimationFrame(loop);
+    renderHUD();
+    toast('已读取上次的进度');
+    if(!game.flags.seenIntro) showIntroCard();
+  } else {
+    startTitle();
+  }
+  window.__PK = {
+    get game(){ return game; }, get mode(){ return mode; }, get battle(){ return battle; },
+    get map(){ return map; }, get player(){ return player; }, get tile(){ return tile; },
+    api:{
+      tryMove:tryMove, interact:interact, startEncounter:startEncounter, playerAct:playerAct,
+      openMoveMenu:openMoveMenu, openBallMenu:openBallMenu, openPotionMenuInBattle:openPotionMenuInBattle,
+      openSwitchMenu:openSwitchMenu, doSwitch:doSwitch, advanceDialog:advanceDialog, showDialog:showDialog,
+      saveGame:saveGame, loadGame:loadGame, loadMap:loadMap, makeMon:makeMon, catchChance:catchChance,
+      computeDamage:computeDamage, startNewGame:startNewGame, startTitle:startTitle, renderHUD:renderHUD,
+      openParty:openParty, openDex:openDex, openBag:openBag, openShop:openShop, openSettings:openSettings,
+      updateBars:updateBars, endBattle:endBattle, hideBattle:hideBattle, drawSprite:drawSprite,
+      audio:audio, setMode:function(m){ mode = m; }, recordDex:recordDex,
+      drawWorld:drawWorld, drawTile:drawTile, PAL_TILE:PAL_TILE, cam:cam, tileAt:tileAt,
+      ctx:function(){ return ctx; }, view:function(){ return {w:viewW,h:viewH,tile:tile,dpr:dpr}; },
+      pauseLoop:function(){ running = false; }, resumeLoop:function(){ if(!running){ running = true; lastTs = 0; requestAnimationFrame(loop); } }
+    }
+  };
+}
+
+if(document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', boot); }
+else { boot(); }
+})();
+</script>
+<script>
+
+/* =========================================================
+   联机层：共享地图同步 / 聊天 / 玩家对战 / 服务端校验
+   由 server.js 静态托管；未连上服务端时自动退回单机模式
+   ========================================================= */
+(function(){
+'use strict';
+var PKW = window.__PK;
+var q = function(s, r){ return (r || document).querySelector(s); };
+var qa = function(s, r){ return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+
+var NET = {
+  ws: null, ready: false, joined: false, pid: null, token: null, name: null,
+  online: 0, mapId: null, peers: [], peersRemote: {}, lastMoveSent: 0,
+  channel: 'world', pendingBall: null, minEnemyHp: 1, potionsUsed: [], lastBattleSeen: null,
+  dueling: false, reconnectDelay: 1000
+};
+
+/* ---------------- 小工具 ---------------- */
+function ntoast(msg, warn){
+  var box = q('#netToast');
+  var el = document.createElement('div');
+  el.className = 'ntoast' + (warn ? ' warn' : '');
+  el.textContent = msg;
+  box.appendChild(el);
+  setTimeout(function(){ el.remove(); }, 2400);
+}
+function setStatus(text, on){
+  q('#netStatus').textContent = text;
+  q('#netDot').className = on ? 'on' : '';
+}
+function offline(reason){
+  NET.ready = false;
+  setStatus('单机模式 · ' + reason, false);
+}
+function send(obj){
+  if(NET.ws && NET.ws.readyState === 1){ try{ NET.ws.send(JSON.stringify(obj)); return true; }catch(e){ return false; } }
+  return false;
+}
+
+/* ---------------- 连接 ---------------- */
+function connect(){
+  if(location.protocol === 'file:'){
+    offline('本地文件打开，未连接服务器');
+    q('#netLoginBtn').disabled = true;
+    return;
+  }
+  var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  try{ NET.ws = new WebSocket(proto + location.host); }
+  catch(e){ offline('浏览器不支持 WebSocket'); return; }
+  NET.ws.onopen = function(){ NET.ready = true; setStatus('已连接服务端', true); tryJoin(); };
+  NET.ws.onmessage = function(ev){
+    var m = null;
+    try{ m = JSON.parse(ev.data); }catch(e){ return; }
+    handle(m);
+  };
+  NET.ws.onclose = function(){
+    if(NET.ready) ntoast('与服务器断开，已切回单机模式', true);
+    offline('连接已断开，正在重试');
+    NET.joined = false;
+    setTimeout(connect, NET.reconnectDelay);
+    NET.reconnectDelay = Math.min(15000, NET.reconnectDelay * 1.6);
+  };
+  NET.ws.onerror = function(){ /* onclose 会接手 */ };
+}
+
+function stored(){
+  try{ return { pid: localStorage.getItem('pk_pid'), token: localStorage.getItem('pk_token') }; }
+  catch(e){ return { pid: null, token: null }; }
+}
+function remember(pid, token){
+  try{ localStorage.setItem('pk_pid', pid); localStorage.setItem('pk_token', token); }catch(e){}
+  NET.pid = pid; NET.token = token;
+}
+function starterFromGame(){
+  var g = PKW && PKW.game;
+  if(g && g.party && g.party.length) return g.party[0].sp;
+  return null;
+}
+function tryJoin(name){
+  if(!starterFromGame()){ setStatus('先在下方选一只初始灵兽', true); return; }
+  var s = stored();
+  var haveLocal = !!(PKW && PKW.game && PKW.game.party && PKW.game.party.length);
+  if(!s.token && !name && !haveLocal){
+    // 还没选初始灵兽，等本机选完再自动加入
+    setStatus('先在下方选一只初始灵兽', true);
+    return;
+  }
+  send({ t: 'join', name: name || (NET.name || ''), token: s.token || NET.token || null, starter: starterFromGame() });
+}
+
+/* ---------------- 服务端消息 ---------------- */
+function handle(m){
+  switch(m.t){
+    case 'welcome':
+      NET.joined = true; NET.name = m.name; NET.online = m.online || 1;
+      remember(m.pid, m.token);
+      q('#netMe').textContent = '你是 ' + m.name;
+      q('#netOnline').textContent = '在线 ' + NET.online;
+      q('#netLoginBtn').textContent = '联机中';
+      setStatus('联机中 · ' + m.name, true);
+      if(m.note) ntoast(m.note, true);
+      ntoast('已加入联机世界：' + m.name);
+      applyProfile(m.profile, true);
+      (m.chat || []).forEach(function(c){ pushChat(c); });
+      syncPos();
+      break;
+    case 'peers':
+      NET.mapId = m.map;
+      NET.peers = m.list || [];
+      q('#netOnline').textContent = '在线 ' + Math.max(NET.online, NET.peers.length);
+      renderNearby();
+      updateRemoteTargets();
+      break;
+    case 'chat': pushChat(m); break;
+    case 'sys': pushChat({ t: 'sys', msg: m.msg }); break;
+    case 'profile': applyProfile(m.profile, false); break;
+    case 'claimResult': onClaimResult(m); break;
+    case 'duelInvite': showDuelInvite(m); break;
+    case 'duelWait': ntoast('已向 ' + m.to + ' 发起挑战，等待接受…'); break;
+    case 'duelDeclined': ntoast(m.by + ' 拒绝了挑战', true); break;
+    case 'duelStart':
+    case 'duelState': showDuel(m); break;
+    case 'duelReady': ntoast(m.msg); break;
+    case 'duelEnd': endDuel(m); break;
+    case 'kicked': ntoast('同一账号在别处登录，这个标签页已退出联机', true); NET.joined = false; break;
+    case 'error': ntoast(m.msg, true); break;
+    case 'info': ntoast(m.msg); break;
+    default: break;
+  }
+}
+
+/* ---------------- 档案同步 ---------------- */
+function applyProfile(p, initial){
+  if(!PKW || !p || !PKW.game) return;
+  var g = PKW.game;
+  g.money = p.money;
+  g.items = Object.assign({ lingqiu: 0, yinlingqiu: 0, yaoshui: 0, nongyao: 0 }, p.items || {});
+  g.dex = p.dex || {};
+  g.wins = p.wins || 0;
+  var local = g.party || [];
+  g.party = (p.party || []).map(function(m, i){
+    var keep = local[i] && local[i].sp === m.sp ? local[i] : null;
+    var mon = {
+      uid: keep && keep.uid ? keep.uid : ('srv' + i + '_' + Date.now()),
+      sp: m.sp, lvl: m.lvl, exp: m.exp || 0,
+      hp: initial ? m.hp : (keep ? Math.min(m.hp, Math.max(1, keep.hp)) : m.hp),
+      moves: (m.moves || []).map(function(x){ return { id: x.id, pp: x.pp }; })
+    };
+    if(initial) mon.hp = m.hp;
+    if(!mon.moves.length && m.sp) mon.moves = [{ id: 'pinyin', pp: 0 }];
+    return mon;
+  });
+  if(PKW.api && PKW.api.renderHUD) PKW.api.renderHUD();
+}
+function syncPos(){
+  if(!PKW || !PKW.map) return;
+  NET.mapId = PKW.map.id;
+  send({ t: 'move', map: PKW.map.id, x: PKW.player.x, y: PKW.player.y, dir: PKW.player.dir });
+  NET.lastMoveSent = Date.now();
+}
+
+/* ---------------- 远端玩家绘制 ---------------- */
+function updateRemoteTargets(){
+  var seen = {};
+  NET.peers.forEach(function(p){
+    seen[p.pid] = 1;
+    var r = NET.peersRemote[p.pid];
+    if(!r){ NET.peersRemote[p.pid] = { x: p.x, y: p.y, tx: p.x, ty: p.y, dir: p.dir, name: p.name, lvl: p.lvl, t: performance.now(), map: NET.mapId }; }
+    else { r.tx = p.x; r.ty = p.y; r.dir = p.dir; r.name = p.name; r.lvl = p.lvl; r.t0 = performance.now(); r.fx = r.x; r.fy = r.y; }
+  });
+  Object.keys(NET.peersRemote).forEach(function(k){ if(!seen[k]) delete NET.peersRemote[k]; });
+}
+function peerInterp(r, now){
+  var dt = Math.max(1, now - (r.t0 || r.t));
+  var k = Math.max(0, Math.min(1, dt / 130));
+  return { x: r.fx + (r.tx - r.fx) * k, y: r.fy + (r.ty - r.fy) * k };
+}
+function drawRemote(now){
+  var c = q('#netCanvas');
+  if(!c || !PKW || !PKW.map) return;
+  var rect = q('#stage').getBoundingClientRect();
+  var dpr = Math.min(2, window.devicePixelRatio || 1);
+  if(NET.lastRect && Math.abs(NET.lastRect.w - Math.round(rect.width * dpr)) < 2 && Math.abs(NET.lastRect.h - Math.round(rect.height * dpr)) < 2
+     && Math.abs(NET.lastRect.left - rect.left) < 1 && Math.abs(NET.lastRect.top - rect.top) < 1){
+    rect = NET.lastRect.r;
+  } else {
+    NET.lastRect = { w: Math.round(rect.width * dpr), h: Math.round(rect.height * dpr), left: rect.left, top: rect.top, r: rect };
+  }
+  if(c.width !== Math.round(rect.width * dpr) || c.height !== Math.round(rect.height * dpr)){
+    c.width = Math.round(rect.width * dpr); c.height = Math.round(rect.height * dpr);
+    c.style.width = rect.width + 'px'; c.style.height = rect.height + 'px';
+  }
+  c.style.left = rect.left + 'px';
+  c.style.top = rect.top + 'px';
+  var ctx = c.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+  if(NET.mapId !== PKW.map.id || !NET.peers.length) return;
+  var tile = PKW.tile, cam = PKW.api ? PKW.api.cam : null;
+  if(!cam) return;
+  var s = tile / 16;
+  Object.keys(NET.peersRemote).forEach(function(pid){
+    var r = NET.peersRemote[pid];
+    var pos = peerInterp(r, now);
+    var dx = Math.round(pos.x * tile - cam.x), dy = Math.round(pos.y * tile - cam.y);
+    ctx.globalAlpha = .28; ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(dx + 8 * s, dy + 15.3 * s, 5 * s, 1.6 * s, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    var R = function(x, y, w, h, col){ ctx.fillStyle = col; ctx.fillRect(dx + x * s, dy + y * s, w * s, h * s); };
+    R(4, 2, 8, 3, '#3a2b23'); R(4, 5, 8, 4, '#f0c8a0');
+    R(6, 7, 1, 1, '#2a1f19'); R(9, 7, 1, 1, '#2a1f19');
+    R(4, 9, 8, 5, '#c46f8f'); R(4, 13, 3, 2, '#333'); R(9, 13, 3, 2, '#333');
+    ctx.font = Math.round(11 * 1) + 'px "PingFang SC",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    var label = r.name + ' L' + r.lvl;
+    var wpx = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(9,14,19,.72)';
+    ctx.fillRect(dx + 8 * s - wpx / 2 - 4, dy - 15, wpx + 8, 14);
+    ctx.fillStyle = '#d8ecff';
+    ctx.fillText(label, dx + 8 * s, dy - 4);
+  });
+}
+
+/* ---------------- 附近玩家 ---------------- */
+function renderNearby(){
+  var list = q('#nearbyList');
+  var rows = NET.peers.map(function(p){
+    var mine = p.pid === NET.pid;
+    return '<div class="peer-row"><div><div class="pn">' + escapeHtml(p.name) + (mine ? '（你）' : '') + '</div>' +
+      '<div class="pl">Lv.' + p.lvl + ' · ' + p.x + ',' + p.y + '</div></div>' +
+      (mine ? '' : '<button class="small-btn primary" data-duel="' + p.pid + '">挑战</button>') + '</div>';
+  }).join('');
+  list.innerHTML = rows || '<p class="muted" style="margin:2px 0">这张地图上暂时只有你一个人。</p>';
+  qa('#nearbyList [data-duel]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var pid = b.getAttribute('data-duel');
+      send({ t: 'duel', to: pid });
+      ntoast('已发出挑战');
+    });
+  });
+}
+function escapeHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+/* ---------------- 聊天 ---------------- */
+function pushChat(m){
+  var log = q('#chatLog');
+  var el = document.createElement('div');
+  if(m.t === 'sys' || m.from === undefined){
+    el.className = 'sysline';
+    el.textContent = m.msg || '';
+  } else {
+    var who = document.createElement('span');
+    who.className = 'who';
+    who.textContent = m.from + (m.channel === 'near' ? '（近旁）' : '') + '：';
+    el.appendChild(who);
+    el.appendChild(document.createTextNode(m.msg || ''));
+  }
+  log.appendChild(el);
+  while(log.children.length > 60) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
+  if(q('#chatBox').classList.contains('hidden') && m.t !== 'sys') ntoast('新消息：' + (m.from || '系统'));
+}
+function sendChat(){
+  var inp = q('#chatInput');
+  var text = (inp.value || '').trim();
+  if(!text) return;
+  if(!NET.joined){ ntoast('还没连上服务端，聊天不可用', true); return; }
+  if(text.length > 120) text = text.slice(0, 120);
+  if(send({ t: 'chat', channel: NET.channel, msg: text })) inp.value = '';
+  else ntoast('发送失败，连接断了', true);
+}
+
+/* ---------------- 玩家对战 ---------------- */
+function showDuelInvite(m){
+  var box = q('#duelPanel');
+  box.classList.remove('hidden');
+  box.innerHTML = '<div style="padding:18px 16px">' +
+    '<div class="modal-title">对战邀请</div>' +
+    '<p class="muted">「' + escapeHtml(m.from.name) + '」的 ' + escapeHtml(spName(m.from.sp)) + ' Lv.' + m.from.lvl + ' 想要和你打一场。</p>' +
+    '<div class="panel-grid" style="grid-template-columns:1fr 1fr;margin-top:10px">' +
+    '<button class="small-btn primary" id="duelYes">接受</button>' +
+    '<button class="small-btn" id="duelNo">拒绝</button></div></div>';
+  q('#duelYes').addEventListener('click', function(){ send({ t: 'duelReply', from: m.from.pid, accept: true }); box.classList.add('hidden'); });
+  q('#duelNo').addEventListener('click', function(){ send({ t: 'duelReply', from: m.from.pid, accept: false }); box.classList.add('hidden'); });
+}
+function spName(sp){
+  var el = { taichou:'苔球兽', taiguan:'苔冠兽', yanwei:'焰尾貂', yanzong:'焰鬃貂', dilu:'滴露蛙', yongquan:'涌泉蛙', yati:'芽蹄鹿', tanjiao:'炭角羊', langwen:'浪纹鲛', lijia:'砾甲虫', chenwei:'尘尾鼬', jifei:'疾羽雀', rongxiao:'绒尾枭' };
+  return el[sp] || sp;
+}
+var MOVE_NAMES = { tengman:'藤蔓缠', yeren:'叶刃', huami:'花蜜吐息', luoye:'落叶乱舞', meihui:'煤灰扑', huohua:'火花', tangzhao:'烫焰爪', chifeng:'炽风', paomoyao:'泡沫咬', shuibao:'水泡弹', chaoyong:'潮涌', wolun:'涡流冲', yanci:'岩刺', suishi:'碎石击', yingke:'硬壳顶', gunshi:'滚石压', jiyu:'疾羽', fengren:'风刃', kongqi:'空音波', xuanfeng:'旋风卷', pinyin:'拼命撞' };
+function showDuel(m){
+  NET.dueling = true;
+  var box = q('#duelPanel');
+  box.classList.remove('hidden');
+  var you = m.you, opp = m.opp;
+  var rows = you.moves.map(function(mv, i){
+    return '<button data-dmove="' + i + '"' + (mv.pp > 0 && !m.over ? '' : ' disabled') + '>' +
+      (MOVE_NAMES[mv.id] || mv.id) + '　PP ' + mv.pp + '</button>';
+  }).join('') || '<button disabled>没有可用技能</button>';
+  box.innerHTML =
+    '<div class="duel-top">' +
+      '<div class="duel-mon"><div class="dn2">你 · ' + escapeHtml(you.name) + '</div>' +
+        '<div class="dn2" style="color:#9fd0ff">' + escapeHtml(spName(you.sp)) + ' Lv.' + you.lvl + '</div>' +
+        '<div class="hpbar"><i style="width:' + Math.round(Math.max(0, you.hp) / you.max * 100) + '%"></i></div>' +
+        '<div class="pl">' + Math.max(0, you.hp) + ' / ' + you.max + '</div></div>' +
+      '<div style="font-size:12px;color:#93a4b3">第 ' + m.turn + ' 回合</div>' +
+      '<div class="duel-mon" style="text-align:right"><div class="dn2">' + escapeHtml(opp.name) + '</div>' +
+        '<div class="dn2" style="color:#ffb98a">' + escapeHtml(spName(opp.sp)) + ' Lv.' + opp.lvl + '</div>' +
+        '<div class="hpbar"><i style="width:' + Math.round(Math.max(0, opp.hp) / opp.max * 100) + '%"></i></div>' +
+        '<div class="pl" style="text-align:right">' + Math.max(0, opp.hp) + ' / ' + opp.max + '</div></div>' +
+    '</div>' +
+    '<div id="duelLog">' + ((m.log && m.log.length) ? m.log.map(function(l){ return '<div>' + escapeHtml(l) + '</div>'; }).join('') : '<div class="muted">选择技能，双方都选好后服务端会结算这一回合。</div>') + '</div>' +
+    '<div><div id="duelActions">' + rows + '</div>' +
+    '<div style="padding:0 12px 12px"><button class="small-btn" id="duelForfeit" style="width:100%">认输退出</button></div></div>';
+  qa('#duelPanel [data-dmove]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var i = +b.getAttribute('data-dmove');
+      send({ t: 'duelAction', id: m.id, move: i });
+      qa('#duelPanel [data-dmove]').forEach(function(x){ x.disabled = true; });
+      q('#duelLog').insertAdjacentHTML('beforeend', '<div class="muted">已提交选择，等待对手…</div>');
+    });
+  });
+  var f = q('#duelForfeit');
+  if(f) f.addEventListener('click', function(){
+    send({ t: 'duelAction', id: m.id, move: 0 });
+    ntoast('已提交，认输请直接关掉页面或等对手结束', true);
+  });
+}
+function endDuel(m){
+  NET.dueling = false;
+  var box = q('#duelPanel');
+  var win = m.winner === NET.pid;
+  box.innerHTML = '<div style="padding:18px 16px">' +
+    '<div class="modal-title">' + (win ? '你赢了这场对战' : (m.winner ? '这场对战输了' : '对战结束')) + '</div>' +
+    '<p class="muted">' + escapeHtml(m.reason || '') + (win ? '　胜者奖励 40 金已入账。' : '') + '</p>' +
+    '<div style="margin-top:10px"><button class="small-btn primary" id="duelClose" style="width:100%">回到地图</button></div></div>';
+  if(m.you) applyProfile(m.you, false);
+  q('#duelClose').addEventListener('click', function(){ box.classList.add('hidden'); });
+}
+
+/* ---------------- 单人战斗结果上报 ---------------- */
+function wrapApi(){
+  if(!PKW || !PKW.api) return;
+  var api = PKW.api;
+  var origPlayerAct = api.playerAct;
+  api.playerAct = function(kind, payload){
+    if(kind === 'ball'){ NET.pendingBall = payload; NET.ballHpRatio = null; }
+    if(kind === 'item'){ NET.potionsUsed.push({ item: payload, slot: 0 }); }
+    return origPlayerAct.apply(this, arguments);
+  };
+  var origOpenShop = api.openShop;
+  api.openShop = function(){
+    var r = origOpenShop.apply(this, arguments);
+    var card = q('#modalCard');
+    if(card) card.addEventListener('click', function(ev){
+      var b = ev.target.closest && ev.target.closest('[data-buy]');
+      if(b && NET.joined) send({ t: 'claim', kind: 'buy', item: b.getAttribute('data-buy') });
+    }, true);
+    return r;
+  };
+  var origOpenBag = api.openBag;
+  api.openBag = function(){
+    var r = origOpenBag.apply(this, arguments);
+    var card = q('#modalCard');
+    if(card) card.addEventListener('click', function(ev){
+      var b = ev.target.closest && ev.target.closest('[data-heal]');
+      if(b && NET.joined){
+        var potion = NET.lastPotionItem || 'yaoshui';
+        send({ t: 'claim', kind: 'potion', item: potion, slot: +b.getAttribute('data-heal') });
+      }
+    }, true);
+    return r;
+  };
+  var origOpenPotionTarget = api.openPotionTarget;
+  if(origOpenPotionTarget){
+    api.openPotionTarget = function(key){
+      NET.lastPotionItem = key;
+      return origOpenPotionTarget.apply(this, arguments);
+    };
+  }
+  var origInteract = api.interact;
+  api.interact = function(){
+    var ch = null;
+    try{
+      var dirs = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+      var d = dirs[PKW.player.dir] || [0, 0];
+      ch = api.tileAt(PKW.player.x + d[0], PKW.player.y + d[1]);
+    }catch(e){}
+    var r = origInteract.apply(this, arguments);
+    if(ch === 'A' && NET.joined) send({ t: 'claim', kind: 'heal' });
+    return r;
+  };
+  NET.apiWrapped = true;
+}
+function onClaimResult(m){
+  if(m.profile) applyProfile(m.profile, false);
+  if(m.kind === 'catch'){
+    if(m.caught) ntoast('服务端确认捕捉成功');
+    else ntoast('服务端判定没抓住（服务器独立随机），这只灵兽没入队', true);
+  } else if(m.kind === 'win'){
+    if(m.ups) ntoast('服务端结算：升级 ' + m.ups + ' 级');
+  } else if(m.kind === 'buy'){
+    if(!m.ok) ntoast('购买未通过服务端校验', true);
+  }
+}
+function watchBattle(now){
+  if(!PKW) return;
+  var b = PKW.battle;
+  if(b && !NET.lastBattleSeen){
+    NET.minEnemyHp = 1; NET.pendingBall = null; NET.potionsUsed = [];
+    NET.battleInfo = { sp: b.enemy.sp, lvl: b.enemy.lvl, map: PKW.map ? PKW.map.id : null, startedAt: now, foeStartHp: b.enemy.hp };
+  }
+  if(b){
+    try{
+      var mx = 1;
+      if(b.enemy && b.enemy.hp !== undefined){
+        var showMax = b.enemyHpShownMax || null;
+        var ratio = b.enemyMax ? (b.enemy.hp / b.enemyMax) : null;
+        if(ratio === null){
+          // 用服务端数据算不出，改用观察法：记录血量与局部最大值
+          if(NET.battleInfo){
+            if(NET.battleInfo.foeMaxHp === undefined || b.enemy.hp > NET.battleInfo.foeMaxHp) NET.battleInfo.foeMaxHp = Math.max(b.enemy.hp, NET.battleInfo.foeMaxHp || b.enemy.hp);
+            var fm = NET.battleInfo.foeMaxHp || 1;
+            ratio = b.enemy.hp / fm;
+          }
+        }
+        if(ratio !== null) NET.minEnemyHp = Math.min(NET.minEnemyHp, Math.max(0.02, ratio));
+        if(b.enemy.hp > 0) NET.lastEnemyHp = b.enemy.hp;
+      }
+    }catch(e){}
+    NET.lastBattleSeen = b;
+    return;
+  }
+  if(!b && NET.lastBattleSeen){
+    var info = NET.battleInfo || {};
+    var g = PKW.game;
+    var caught = !!(NET.pendingBall && g && g.party && info.partyLen !== undefined ? g.party.length > info.partyLen : false);
+    var won = NET.lastEnemyHp !== undefined && info.foeStartHp !== undefined;
+    if(NET.joined && info.map){
+      if(NET.pendingBall){
+        send({ t: 'claim', kind: 'catch', map: info.map, sp: info.sp, lv: info.lvl, ball: NET.pendingBall, hpRatio: NET.minEnemyHp });
+      } else if(info.enemyFainted){
+        send({ t: 'claim', kind: 'win', map: info.map, sp: info.sp, lv: info.lvl });
+      }
+    }
+    NET.lastBattleSeen = null; NET.battleInfo = null; NET.pendingBall = null;
+    setTimeout(syncPos, 400);
+  }
+}
+function watchBattleMeta(){
+  if(!PKW) return;
+  var b = PKW.battle;
+  if(b && NET.battleInfo){
+    if(b.enemy && b.enemy.hp <= 0) NET.battleInfo.enemyFainted = true;
+    if(!NET.battleInfo.partyLen && PKW.game && PKW.game.party) NET.battleInfo.partyLen = PKW.game.party.length;
+  }
+}
+
+/* ---------------- 主循环 ---------------- */
+function frame(now){
+  requestAnimationFrame(frame);
+  if(PKW && PKW.mode !== 'title'){
+    drawRemote(now);
+  }
+  if(now - lastPosCheck > 120){
+    lastPosCheck = now;
+    if(PKW && PKW.map && PKW.player && PKW.joined){
+      var key = PKW.map.id + ':' + PKW.player.x + ':' + PKW.player.y;
+      if(key !== lastPosKey && !PKW.player.moving){ lastPosKey = key; syncPos(); }
+    }
+    if(PKW && PKW.joined){
+      var b = PKW.battle;
+      if(b && NET.battleInfo){
+        if(b.enemy && b.enemy.hp <= 0) NET.battleInfo.enemyFainted = true;
+        if(NET.battleInfo.partyLen === undefined && PKW.game && PKW.game.party) NET.battleInfo.partyLen = PKW.game.party.length;
+      }
+      watchBattle(now);
+    }
+  }
+  if(NET.dueling) return;
+}
+var lastPosCheck = 0, lastPosKey = '';
+
+/* ---------------- 界面绑定 ---------------- */
+function bindUi(){
+  q('#netChatBtn').addEventListener('click', function(){
+    q('#chatBox').classList.toggle('hidden');
+    q('#nearbyBox').classList.add('hidden');
+    if(!q('#chatBox').classList.contains('hidden')) q('#chatInput').focus();
+  });
+  q('#netNearBtn').addEventListener('click', function(){
+    q('#nearbyBox').classList.toggle('hidden');
+    q('#chatBox').classList.add('hidden');
+    renderNearby();
+  });
+  q('#chatClose').addEventListener('click', function(){ q('#chatBox').classList.add('hidden'); });
+  q('#chatSend').addEventListener('click', sendChat);
+  q('#chatInput').addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); sendChat(); } });
+  qa('#chatHead [data-ch]').forEach(function(b){
+    b.addEventListener('click', function(){
+      NET.channel = b.getAttribute('data-ch');
+      qa('#chatHead [data-ch]').forEach(function(x){ x.classList.toggle('active', x === b); });
+    });
+  });
+  q('#netLoginBtn').addEventListener('click', function(){
+    if(NET.joined){ q('#nearbyBox').classList.remove('hidden'); renderNearby(); return; }
+    openLoginDialog();
+  });
+  window.addEventListener('beforeunload', function(){ if(NET.ws) try{ NET.ws.close(); }catch(e){} });
+}
+function openLoginDialog(){
+  if(!PKW) return;
+  var root = q('#modalRoot');
+  var starter = starterFromGame();
+  q('#modalCard').innerHTML =
+    '<div class="modal-head"><div class="modal-title">加入联机世界</div><button class="modal-close" id="loginCancel">取消</button></div>' +
+    '<p class="muted">输入一个昵称就能加入（不收集邮箱、手机号或任何密码）。昵称重复时服务器会自动加后缀。<br>' +
+    '进度保存在服务端，换电脑用同一个浏览器打开也能接着玩。</p>' +
+    '<div class="net-field"><label>昵称（1-12 个字）</label><input id="loginName" maxlength="12" placeholder="例如：毛豆" value="' + escapeHtml(NET.name || '') + '"></div>' +
+    '<div class="panel-grid" style="grid-template-columns:1fr;margin-top:8px">' +
+    '<button class="small-btn primary" id="loginGo" style="padding:11px">进入世界</button></div>' +
+    (starter ? '<p class="note" style="margin-top:8px">将带着你的 ' + escapeHtml(spName(starter)) + ' 一起进入。</p>' : '<p class="note" style="margin-top:8px">先在游戏里选好初始灵兽，再回来加入联机。</p>');
+  root.classList.remove('hidden');
+  q('#loginCancel').addEventListener('click', function(){ root.classList.add('hidden'); });
+  q('#loginGo').addEventListener('click', function(){
+    var name = (q('#loginName').value || '').trim();
+    if(name.length < 1){ ntoast('先起个昵称', true); return; }
+    if(!NET.ready){ ntoast('还没连上服务端，稍后再试（当前为单机模式）', true); return; }
+    NET.name = name;
+    root.classList.add('hidden');
+    tryJoin(name);
+  });
+}
+
+/* ---------------- 启动 ---------------- */
+function start(){
+  var s = stored();
+  if(s.token){ NET.token = s.token; NET.pid = s.pid; }
+  bindUi();
+  connect();
+  requestAnimationFrame(frame);
+  // 等游戏本体就绪后自动加入
+  var waited = 0;
+  var iv = setInterval(function(){
+    waited += 300;
+    if(window.__PK && window.__PK.api && !NET.apiWrapped){ wrapApi(); }
+    if(NET.ready && window.__PK && window.__PK.mode !== 'title' && window.__PK.game && window.__PK.game.party.length && !NET.joined){
+      if(!NET.joinTried || waited - NET.joinAt > 1500){
+        NET.joinTried = true; NET.joinAt = waited;
+        send({ t: 'join', name: NET.name || ('旅人' + Math.floor(Math.random() * 89 + 10)), token: NET.token || null, starter: starterFromGame() });
+      }
+    }
+    if(NET.joined || waited > 30000) clearInterval(iv);
+  }, 300);
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+else start();
+})();
+
+</script>
+<style>
+/* ---------- 联机层 ---------- */
+#netBar{position:fixed; left:10px; top:10px; z-index:40; display:flex; align-items:center; gap:8px; padding:6px 10px;
+  background:linear-gradient(180deg,#14202a,#101820); border:1px solid #2b3744; border-radius:12px;
+  font-size:12px; color:#b8cad8; flex-wrap:wrap}
+#netDot{width:8px;height:8px;border-radius:50%;background:#ef6b6b;box-shadow:0 0 8px rgba(239,107,107,.6)}
+#netDot.on{background:#5fd08a;box-shadow:0 0 8px rgba(95,208,138,.6)}
+#netBar .grow{flex:1 1 auto; min-width:0}
+#netBar button{margin-left:2px}
+.net-chip{padding:3px 8px;border-radius:999px;background:#0f1720;border:1px solid #2b3744;font-family:var(--mono);font-size:11px}
+#nearbyBox{position:fixed; right:10px; top:52px; z-index:9; width:min(238px,46%); max-height:44%;
+  overflow:auto; padding:8px; border-radius:11px; background:rgba(11,17,23,.92); border:1px solid #35485a;
+  box-shadow:0 10px 24px rgba(0,0,0,.45); font-size:12px}
+#nearbyBox h4{margin:0 0 6px; font-size:11.5px; letter-spacing:1px; color:#93a4b3; font-weight:500}
+.peer-row{display:grid; grid-template-columns:1fr auto; gap:6px; align-items:center; padding:5px 6px;
+  border-radius:7px; background:#141d26; border:1px solid #26343f; margin-bottom:5px}
+.peer-row .pn{font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.peer-row .pl{font-family:var(--mono); font-size:10px; color:#8fa3b4}
+#chatBox{position:fixed; left:10px; top:52px; z-index:9; width:min(300px,58%); max-height:52%;
+  display:flex; flex-direction:column; border-radius:11px; overflow:hidden; background:rgba(11,17,23,.94);
+  border:1px solid #35485a; box-shadow:0 10px 24px rgba(0,0,0,.45)}
+#chatHead{display:flex; align-items:center; gap:6px; padding:6px 8px; background:#16202a; border-bottom:1px solid #26343f}
+#chatHead .tab{padding:3px 8px; border-radius:7px; font-size:11px; background:#1d2833; border:1px solid #35485a; color:#b8cad8}
+#chatHead .tab.active{background:#1f5138; border-color:#46845f; color:#ddf5e5}
+#chatLog{flex:1 1 auto; overflow:auto; padding:7px 9px; font-size:12px; line-height:1.55; max-height:170px}
+#chatLog div{margin-bottom:3px; word-break:break-word}
+#chatLog .who{color:#7fb0d4}
+#chatLog .sysline{color:#f2c14e}
+#chatRow{display:flex; gap:5px; padding:6px; border-top:1px solid #26343f; background:#121a22}
+#chatInput{flex:1 1 auto; min-width:0; padding:6px 8px; font-size:12px; border-radius:7px;
+  background:#0d141b; border:1px solid #35485a; color:#e9eff4; font-family:inherit}
+#netModal .modal-card{max-width:460px}
+.net-field{display:flex; flex-direction:column; gap:6px; margin:10px 0 4px}
+.net-field label{font-size:12px; color:#93a4b3}
+.net-field input{padding:9px 10px; border-radius:9px; background:#0d141b; border:1px solid #35485a; color:#e9eff4; font-size:14px; font-family:inherit}
+#duelPanel{position:fixed; inset:0; z-index:12; display:flex; flex-direction:column; justify-content:space-between;
+  background:linear-gradient(180deg, rgba(9,14,19,.96), rgba(9,14,19,.99))}
+.duel-top{display:flex; align-items:center; justify-content:space-between; padding:10px 12px; gap:10px}
+.duel-mon{flex:1 1 0; min-width:0}
+.duel-mon .dn2{font-size:12.5px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+#duelLog{flex:1 1 auto; overflow:auto; margin:0 12px; padding:10px; font-size:12.5px; line-height:1.6;
+  background:rgba(15,22,29,.9); border:1px solid #35485a; border-radius:10px}
+#duelActions{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; padding:10px 12px 12px}
+#duelActions button{padding:10px; font-size:12.5px; border-radius:9px; background:#243442; border:1px solid #46606f; color:#dbeaf6}
+#duelActions button:disabled{opacity:.4}
+#netToast{position:fixed; left:50%; transform:translateX(-50%); top:8px; z-index:11; pointer-events:none; display:grid; gap:5px}
+.ntoast{padding:6px 12px; border-radius:999px; font-size:12px; background:rgba(14,22,29,.94); border:1px solid #3f7a58; color:#d8f5e3}
+.ntoast.warn{border-color:#8a6a3a; color:#f7e2b8}
+#netCanvas{position:fixed; pointer-events:none; z-index:6}
+@media (max-width:700px){
+  #nearbyBox{width:min(210px,54%); top:38px; font-size:11.5px}
+  #chatBox{width:min(250px,64%); top:38px}
+  #chatLog{max-height:120px}
+}
+</style>
+<div id="netBar">
+  <span id="netDot"></span>
+  <span id="netStatus">正在连接服务端…</span>
+  <span class="grow"></span>
+  <span class="net-chip" id="netOnline">在线 0</span>
+  <span class="net-chip" id="netMe">未登录</span>
+  <button class="hbtn" id="netChatBtn">聊天</button>
+  <button class="hbtn" id="netNearBtn">附近</button>
+  <button class="hbtn" id="netLoginBtn">加入联机</button>
+</div>
+<canvas id="netCanvas"></canvas>
+<div id="nearbyBox" class="hidden">
+  <h4>同一张地图上的玩家</h4>
+  <div id="nearbyList"></div>
+</div>
+<div id="chatBox" class="hidden">
+  <div id="chatHead">
+    <button class="tab active" data-ch="world">世界</button>
+    <button class="tab" data-ch="near">附近</button>
+    <span class="grow" style="flex:1"></span>
+    <button class="tab" id="chatClose">收起</button>
+  </div>
+  <div id="chatLog"></div>
+  <div id="chatRow"><input id="chatInput" maxlength="120" placeholder="说点什么（回车发送）"><button class="tab" id="chatSend">发送</button></div>
+</div>
+<div id="duelPanel" class="hidden"></div>
+<div id="netToast"></div>
+
+</body>
+</html>
